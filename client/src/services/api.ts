@@ -60,6 +60,17 @@ export interface EstimateWithSections extends Estimate {
   sections: EstimateSection[]
 }
 
+export interface EstimateVersion {
+  id: string
+  versionNumber: number
+  name: string | null
+  createdAt: string
+}
+
+export interface EstimateVersionWithSections extends EstimateVersion {
+  sections: EstimateSection[]
+}
+
 export interface EstimateData {
   title: string
   sections: Section[]
@@ -113,4 +124,16 @@ export const estimatesApi = {
     api.get<EstimateData>(`/estimates/customer/${token}`),
   getMasterView: (token: string) => 
     api.get<EstimateData>(`/estimates/master/${token}`),
+  
+  // Versions
+  getVersions: (estimateId: string) =>
+    api.get<EstimateVersion[]>(`/estimates/${estimateId}/versions`),
+  createVersion: (estimateId: string, name?: string) =>
+    api.post<EstimateVersion>(`/estimates/${estimateId}/versions`, { name }),
+  getVersion: (estimateId: string, versionId: string) =>
+    api.get<EstimateVersionWithSections>(`/estimates/${estimateId}/versions/${versionId}`),
+  restoreVersion: (estimateId: string, versionId: string) =>
+    api.post<{ message: string; restoredFrom: { versionNumber: number; name: string | null } }>(
+      `/estimates/${estimateId}/versions/${versionId}/restore`
+    ),
 }

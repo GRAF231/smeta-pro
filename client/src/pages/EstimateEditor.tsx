@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { estimatesApi, EstimateWithSections, EstimateSection, EstimateItem } from '../services/api'
+import { 
+  estimatesApi, 
+  EstimateWithSections, 
+  EstimateSection, 
+  EstimateItem,
+  EstimateVersion,
+  EstimateVersionWithSections
+} from '../services/api'
 
 export default function EstimateEditor() {
   const { id } = useParams<{ id: string }>()
@@ -13,6 +20,15 @@ export default function EstimateEditor() {
   const [editingItem, setEditingItem] = useState<string | null>(null)
   const [editingData, setEditingData] = useState<Partial<EstimateItem>>({})
   const [newItemSection, setNewItemSection] = useState<string | null>(null)
+  
+  // Version control state
+  const [showVersionModal, setShowVersionModal] = useState(false)
+  const [versions, setVersions] = useState<EstimateVersion[]>([])
+  const [selectedVersion, setSelectedVersion] = useState<EstimateVersionWithSections | null>(null)
+  const [isCreatingVersion, setIsCreatingVersion] = useState(false)
+  const [newVersionName, setNewVersionName] = useState('')
+  const [isLoadingVersions, setIsLoadingVersions] = useState(false)
+  const [isRestoringVersion, setIsRestoringVersion] = useState(false)
 
   useEffect(() => {
     if (id) loadEstimate(id)
@@ -165,6 +181,67 @@ export default function EstimateEditor() {
     }
   }
 
+  // Version control handlers
+  const loadVersions = async () => {
+    if (!id) return
+    setIsLoadingVersions(true)
+    try {
+      const res = await estimatesApi.getVersions(id)
+      setVersions(res.data)
+    } catch {
+      setError('Ошибка загрузки версий')
+    } finally {
+      setIsLoadingVersions(false)
+    }
+  }
+
+  const handleOpenVersionModal = async () => {
+    setShowVersionModal(true)
+    setSelectedVersion(null)
+    await loadVersions()
+  }
+
+  const handleCreateVersion = async () => {
+    if (!id) return
+    setIsCreatingVersion(true)
+    try {
+      await estimatesApi.createVersion(id, newVersionName || undefined)
+      setNewVersionName('')
+      await loadVersions()
+    } catch {
+      setError('Ошибка создания версии')
+    } finally {
+      setIsCreatingVersion(false)
+    }
+  }
+
+  const handleSelectVersion = async (versionId: string) => {
+    if (!id) return
+    try {
+      const res = await estimatesApi.getVersion(id, versionId)
+      setSelectedVersion(res.data)
+    } catch {
+      setError('Ошибка загрузки версии')
+    }
+  }
+
+  const handleRestoreVersion = async () => {
+    if (!id || !selectedVersion) return
+    if (!confirm(`Восстановить смету из версии ${selectedVersion.versionNumber}${selectedVersion.name ? ` "${selectedVersion.name}"` : ''}? Текущие данные будут заменены.`)) return
+    
+    setIsRestoringVersion(true)
+    try {
+      await estimatesApi.restoreVersion(id, selectedVersion.id)
+      await loadEstimate(id)
+      setShowVersionModal(false)
+      setSelectedVersion(null)
+    } catch {
+      setError('Ошибка восстановления версии')
+    } finally {
+      setIsRestoringVersion(false)
+    }
+  }
+
   const formatNumber = (num: number) => new Intl.NumberFormat('ru-RU').format(num)
 
   const calculateTotals = () => {
@@ -225,6 +302,15 @@ export default function EstimateEditor() {
         </div>
         
         <div className="flex gap-3">
+          <button
+            onClick={handleOpenVersionModal}
+            className="btn-secondary flex items-center gap-2"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            История версий
+          </button>
           <button
             onClick={handleSync}
             disabled={isSyncing}
@@ -486,6 +572,175 @@ export default function EstimateEditor() {
           </div>
         ))}
       </div>
+
+      {/* Version Modal */}
+      {showVersionModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-2xl border border-slate-700 w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
+              <h2 className="font-display text-xl font-bold text-white">
+                {selectedVersion ? `Версия ${selectedVersion.versionNumber}` : 'История версий'}
+              </h2>
+              <button 
+                onClick={() => { setShowVersionModal(false); setSelectedVersion(null); }}
+                className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {selectedVersion ? (
+                // Version detail view
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <button
+                      onClick={() => setSelectedVersion(null)}
+                      className="text-slate-400 hover:text-white flex items-center gap-1"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                      </svg>
+                      Назад к списку
+                    </button>
+                    <button
+                      onClick={handleRestoreVersion}
+                      disabled={isRestoringVersion}
+                      className="btn-primary flex items-center gap-2"
+                    >
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      {isRestoringVersion ? 'Восстановление...' : 'Восстановить эту версию'}
+                    </button>
+                  </div>
+
+                  <div className="bg-slate-700/30 rounded-xl p-4">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-slate-400">Название:</span>
+                        <span className="ml-2 text-white">{selectedVersion.name || '—'}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400">Создана:</span>
+                        <span className="ml-2 text-white">
+                          {new Date(selectedVersion.createdAt).toLocaleString('ru-RU')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Version sections preview */}
+                  <div className="space-y-4">
+                    {selectedVersion.sections.map(section => (
+                      <div key={section.id} className="bg-slate-700/20 rounded-xl overflow-hidden">
+                        <div className="px-4 py-3 bg-slate-700/30 border-b border-slate-700/50">
+                          <h3 className="font-semibold text-white">{section.name}</h3>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="text-left text-slate-400 border-b border-slate-700/30">
+                                <th className="px-4 py-2">Наименование</th>
+                                <th className="px-4 py-2 w-16">Ед.</th>
+                                <th className="px-4 py-2 w-20 text-right">Кол-во</th>
+                                <th className="px-4 py-2 w-28 text-right">Цена З</th>
+                                <th className="px-4 py-2 w-28 text-right">Цена М</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {section.items.map(item => (
+                                <tr key={item.id} className="border-b border-slate-700/20">
+                                  <td className="px-4 py-2 text-slate-200">{item.name}</td>
+                                  <td className="px-4 py-2 text-slate-400">{item.unit}</td>
+                                  <td className="px-4 py-2 text-right text-slate-300">{item.quantity}</td>
+                                  <td className="px-4 py-2 text-right text-primary-400">{formatNumber(item.customerPrice)}</td>
+                                  <td className="px-4 py-2 text-right text-accent-400">{formatNumber(item.masterPrice)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                // Versions list view
+                <div className="space-y-6">
+                  {/* Create new version */}
+                  <div className="bg-slate-700/30 rounded-xl p-4">
+                    <h3 className="font-semibold text-white mb-3">Сохранить текущую версию</h3>
+                    <div className="flex gap-3">
+                      <input
+                        type="text"
+                        value={newVersionName}
+                        onChange={(e) => setNewVersionName(e.target.value)}
+                        placeholder="Название версии (необязательно)"
+                        className="input-field flex-1"
+                      />
+                      <button
+                        onClick={handleCreateVersion}
+                        disabled={isCreatingVersion}
+                        className="btn-primary whitespace-nowrap"
+                      >
+                        {isCreatingVersion ? 'Сохранение...' : 'Сохранить версию'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Versions list */}
+                  <div>
+                    <h3 className="font-semibold text-white mb-3">Сохранённые версии</h3>
+                    {isLoadingVersions ? (
+                      <div className="flex items-center justify-center py-8">
+                        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary-500"></div>
+                      </div>
+                    ) : versions.length === 0 ? (
+                      <div className="text-center py-8 text-slate-400">
+                        <svg className="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <p>Версий пока нет</p>
+                        <p className="text-sm mt-1">Сохраните первую версию, чтобы иметь возможность откатиться к ней позже</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {versions.map(version => (
+                          <button
+                            key={version.id}
+                            onClick={() => handleSelectVersion(version.id)}
+                            className="w-full flex items-center justify-between p-4 bg-slate-700/20 hover:bg-slate-700/40 rounded-xl transition-colors text-left"
+                          >
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-white">Версия {version.versionNumber}</span>
+                                {version.name && (
+                                  <span className="text-primary-400">"{version.name}"</span>
+                                )}
+                              </div>
+                              <p className="text-sm text-slate-400 mt-1">
+                                {new Date(version.createdAt).toLocaleString('ru-RU')}
+                              </p>
+                            </div>
+                            <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

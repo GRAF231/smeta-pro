@@ -1,6 +1,14 @@
 import { Router, Response } from 'express'
 import { v4 as uuidv4 } from 'uuid'
-import { estimateQueries, sectionQueries, itemQueries, db } from '../models/database'
+import { 
+  estimateQueries, 
+  sectionQueries, 
+  itemQueries, 
+  versionQueries, 
+  versionSectionQueries, 
+  versionItemQueries,
+  db 
+} from '../models/database'
 import { authMiddleware, AuthRequest } from '../middleware/auth'
 import { 
   fetchSheetData, 
@@ -35,6 +43,42 @@ interface ItemRow {
   id: string
   estimate_id: string
   section_id: string
+  number: string
+  name: string
+  unit: string
+  quantity: number
+  customer_price: number
+  customer_total: number
+  master_price: number
+  master_total: number
+  sort_order: number
+  show_customer: number
+  show_master: number
+}
+
+interface VersionRow {
+  id: string
+  estimate_id: string
+  version_number: number
+  name: string | null
+  created_at: string
+}
+
+interface VersionSectionRow {
+  id: string
+  version_id: string
+  original_section_id: string
+  name: string
+  sort_order: number
+  show_customer: number
+  show_master: number
+}
+
+interface VersionItemRow {
+  id: string
+  version_id: string
+  version_section_id: string
+  original_item_id: string
   number: string
   name: string
   unit: string
@@ -510,6 +554,241 @@ router.get('/master/:token', async (req: AuthRequest, res: Response) => {
     res.status(500).json({ error: 'Ошибка загрузки сметы' })
   }
 })
+
+// ========== VERSION CONTROL ENDPOINTS ==========
+
+// Get all versions for an estimate
+router.get('/:id/versions', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const estimate = estimateQueries.findById.get(req.params.id) as EstimateRow | undefined
+    
+    if (!estimate || estimate.brigadir_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Смета не найдена' })
+    }
+
+    const versions = versionQueries.findByEstimateId.all(estimate.id) as VersionRow[]
+    
+    res.json(versions.map(v => ({
+      id: v.id,
+      versionNumber: v.version_number,
+      name: v.name,
+      createdAt: v.created_at,
+    })))
+  } catch (error) {
+    console.error('Get versions error:', error)
+    res.status(500).json({ error: 'Ошибка получения версий' })
+  }
+})
+
+// Create a new version (snapshot)
+router.post('/:id/versions', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const { name } = req.body
+    const estimate = estimateQueries.findById.get(req.params.id) as EstimateRow | undefined
+    
+    if (!estimate || estimate.brigadir_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Смета не найдена' })
+    }
+
+    // Get next version number
+    const maxVersion = versionQueries.getMaxVersionNumber.get(estimate.id) as { max_version: number }
+    const versionNumber = maxVersion.max_version + 1
+
+    // Create version record
+    const versionId = uuidv4()
+    versionQueries.create.run(versionId, estimate.id, versionNumber, name || null)
+
+    // Copy current sections and items to version
+    const sections = sectionQueries.findByEstimateId.all(estimate.id) as SectionRow[]
+    const items = itemQueries.findByEstimateId.all(estimate.id) as ItemRow[]
+
+    // Create a map from original section id to version section id
+    const sectionIdMap = new Map<string, string>()
+
+    for (const section of sections) {
+      const versionSectionId = uuidv4()
+      sectionIdMap.set(section.id, versionSectionId)
+      
+      versionSectionQueries.create.run(
+        versionSectionId,
+        versionId,
+        section.id,
+        section.name,
+        section.sort_order,
+        section.show_customer,
+        section.show_master
+      )
+    }
+
+    for (const item of items) {
+      const versionSectionId = sectionIdMap.get(item.section_id)
+      if (!versionSectionId) continue
+
+      versionItemQueries.create.run(
+        uuidv4(),
+        versionId,
+        versionSectionId,
+        item.id,
+        item.number,
+        item.name,
+        item.unit,
+        item.quantity,
+        item.customer_price,
+        item.customer_total,
+        item.master_price,
+        item.master_total,
+        item.sort_order,
+        item.show_customer,
+        item.show_master
+      )
+    }
+
+    res.status(201).json({
+      id: versionId,
+      versionNumber,
+      name: name || null,
+      createdAt: new Date().toISOString(),
+    })
+  } catch (error) {
+    console.error('Create version error:', error)
+    res.status(500).json({ error: 'Ошибка создания версии' })
+  }
+})
+
+// Get specific version details
+router.get('/:id/versions/:versionId', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const estimate = estimateQueries.findById.get(req.params.id) as EstimateRow | undefined
+    
+    if (!estimate || estimate.brigadir_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Смета не найдена' })
+    }
+
+    const version = versionQueries.findById.get(req.params.versionId) as VersionRow | undefined
+    
+    if (!version || version.estimate_id !== estimate.id) {
+      return res.status(404).json({ error: 'Версия не найдена' })
+    }
+
+    const sections = versionSectionQueries.findByVersionId.all(version.id) as VersionSectionRow[]
+    const items = versionItemQueries.findByVersionId.all(version.id) as VersionItemRow[]
+
+    // Group items by section
+    const sectionsWithItems = sections.map(section => ({
+      id: section.id,
+      name: section.name,
+      sortOrder: section.sort_order,
+      showCustomer: Boolean(section.show_customer),
+      showMaster: Boolean(section.show_master),
+      items: items
+        .filter(item => item.version_section_id === section.id)
+        .map(item => ({
+          id: item.id,
+          number: item.number,
+          name: item.name,
+          unit: item.unit,
+          quantity: item.quantity,
+          customerPrice: item.customer_price,
+          customerTotal: item.customer_total,
+          masterPrice: item.master_price,
+          masterTotal: item.master_total,
+          sortOrder: item.sort_order,
+          showCustomer: Boolean(item.show_customer),
+          showMaster: Boolean(item.show_master),
+        })),
+    }))
+
+    res.json({
+      id: version.id,
+      versionNumber: version.version_number,
+      name: version.name,
+      createdAt: version.created_at,
+      sections: sectionsWithItems,
+    })
+  } catch (error) {
+    console.error('Get version error:', error)
+    res.status(500).json({ error: 'Ошибка получения версии' })
+  }
+})
+
+// Restore estimate from a version
+router.post('/:id/versions/:versionId/restore', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const estimate = estimateQueries.findById.get(req.params.id) as EstimateRow | undefined
+    
+    if (!estimate || estimate.brigadir_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Смета не найдена' })
+    }
+
+    const version = versionQueries.findById.get(req.params.versionId) as VersionRow | undefined
+    
+    if (!version || version.estimate_id !== estimate.id) {
+      return res.status(404).json({ error: 'Версия не найдена' })
+    }
+
+    // Get version data
+    const versionSections = versionSectionQueries.findByVersionId.all(version.id) as VersionSectionRow[]
+    const versionItems = versionItemQueries.findByVersionId.all(version.id) as VersionItemRow[]
+
+    // Delete current sections and items
+    itemQueries.deleteByEstimateId.run(estimate.id)
+    sectionQueries.deleteByEstimateId.run(estimate.id)
+
+    // Create a map from version section id to new section id
+    const sectionIdMap = new Map<string, string>()
+
+    // Restore sections
+    for (const vSection of versionSections) {
+      const newSectionId = uuidv4()
+      sectionIdMap.set(vSection.id, newSectionId)
+      
+      sectionQueries.create.run(
+        newSectionId,
+        estimate.id,
+        vSection.name,
+        vSection.sort_order,
+        vSection.show_customer,
+        vSection.show_master
+      )
+    }
+
+    // Restore items
+    for (const vItem of versionItems) {
+      const newSectionId = sectionIdMap.get(vItem.version_section_id)
+      if (!newSectionId) continue
+
+      itemQueries.create.run(
+        uuidv4(),
+        estimate.id,
+        newSectionId,
+        vItem.number,
+        vItem.name,
+        vItem.unit,
+        vItem.quantity,
+        vItem.customer_price,
+        vItem.customer_total,
+        vItem.master_price,
+        vItem.master_total,
+        vItem.sort_order,
+        vItem.show_customer,
+        vItem.show_master
+      )
+    }
+
+    res.json({ 
+      message: 'Смета восстановлена из версии', 
+      restoredFrom: {
+        versionNumber: version.version_number,
+        name: version.name,
+      }
+    })
+  } catch (error) {
+    console.error('Restore version error:', error)
+    res.status(500).json({ error: 'Ошибка восстановления версии' })
+  }
+})
+
+// ========== HELPER FUNCTIONS ==========
 
 // Helper function to sync items from Google Sheets
 function syncEstimateItems(estimateId: string, rows: string[][]) {
