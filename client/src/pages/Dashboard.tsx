@@ -34,12 +34,32 @@ export default function Dashboard() {
     }
   }
 
-  const copyLink = (token: string, type: 'customer' | 'master') => {
+  const copyLink = async (token: string, type: 'customer' | 'master') => {
     const path = type === 'customer' ? '/c/' : '/m/'
     const url = `${window.location.origin}${path}${token}`
-    navigator.clipboard.writeText(url)
-    setCopiedLink(`${type}-${token}`)
-    setTimeout(() => setCopiedLink(null), 2000)
+    
+    try {
+      // Try modern clipboard API first
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(url)
+      } else {
+        // Fallback for HTTP
+        const textArea = document.createElement('textarea')
+        textArea.value = url
+        textArea.style.position = 'fixed'
+        textArea.style.left = '-999999px'
+        document.body.appendChild(textArea)
+        textArea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textArea)
+      }
+      setCopiedLink(`${type}-${token}`)
+      setTimeout(() => setCopiedLink(null), 2000)
+    } catch (err) {
+      console.error('Failed to copy:', err)
+      // Show URL in prompt as last resort
+      prompt('Скопируйте ссылку:', url)
+    }
   }
 
   if (isLoading) {
