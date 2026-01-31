@@ -1,6 +1,6 @@
 import { Router, Response } from 'express'
 import { v4 as uuidv4 } from 'uuid'
-import { estimateQueries } from '../models/database'
+import { estimateQueries, sectionQueries, itemQueries, db } from '../models/database'
 import { authMiddleware, AuthRequest } from '../middleware/auth'
 import { 
   fetchSheetData, 
@@ -18,7 +18,34 @@ interface EstimateRow {
   customer_link_token: string
   master_link_token: string
   column_mapping: string
+  last_synced_at: string | null
   created_at: string
+}
+
+interface SectionRow {
+  id: string
+  estimate_id: string
+  name: string
+  sort_order: number
+  show_customer: number
+  show_master: number
+}
+
+interface ItemRow {
+  id: string
+  estimate_id: string
+  section_id: string
+  number: string
+  name: string
+  unit: string
+  quantity: number
+  customer_price: number
+  customer_total: number
+  master_price: number
+  master_total: number
+  sort_order: number
+  show_customer: number
+  show_master: number
 }
 
 // Get all estimates for current user
@@ -32,6 +59,7 @@ router.get('/', authMiddleware, (req: AuthRequest, res: Response) => {
       googleSheetId: e.google_sheet_id,
       customerLinkToken: e.customer_link_token,
       masterLinkToken: e.master_link_token,
+      lastSyncedAt: e.last_synced_at,
       createdAt: e.created_at,
     })))
   } catch (error) {
@@ -40,7 +68,7 @@ router.get('/', authMiddleware, (req: AuthRequest, res: Response) => {
   }
 })
 
-// Get single estimate
+// Get single estimate with all items
 router.get('/:id', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
     const estimate = estimateQueries.findById.get(req.params.id) as EstimateRow | undefined
@@ -49,13 +77,43 @@ router.get('/:id', authMiddleware, (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Смета не найдена' })
     }
 
+    const sections = sectionQueries.findByEstimateId.all(estimate.id) as SectionRow[]
+    const items = itemQueries.findByEstimateId.all(estimate.id) as ItemRow[]
+
+    // Group items by section
+    const sectionsWithItems = sections.map(section => ({
+      id: section.id,
+      name: section.name,
+      sortOrder: section.sort_order,
+      showCustomer: Boolean(section.show_customer),
+      showMaster: Boolean(section.show_master),
+      items: items
+        .filter(item => item.section_id === section.id)
+        .map(item => ({
+          id: item.id,
+          number: item.number,
+          name: item.name,
+          unit: item.unit,
+          quantity: item.quantity,
+          customerPrice: item.customer_price,
+          customerTotal: item.customer_total,
+          masterPrice: item.master_price,
+          masterTotal: item.master_total,
+          sortOrder: item.sort_order,
+          showCustomer: Boolean(item.show_customer),
+          showMaster: Boolean(item.show_master),
+        })),
+    }))
+
     res.json({
       id: estimate.id,
       title: estimate.title,
       googleSheetId: estimate.google_sheet_id,
       customerLinkToken: estimate.customer_link_token,
       masterLinkToken: estimate.master_link_token,
+      lastSyncedAt: estimate.last_synced_at,
       createdAt: estimate.created_at,
+      sections: sectionsWithItems,
     })
   } catch (error) {
     console.error('Get estimate error:', error)
@@ -63,7 +121,7 @@ router.get('/:id', authMiddleware, (req: AuthRequest, res: Response) => {
   }
 })
 
-// Create estimate
+// Create estimate and sync data
 router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const { title, googleSheetUrl } = req.body
@@ -79,9 +137,10 @@ router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ error: (err as Error).message })
     }
 
-    // Verify the sheet is accessible
+    // Fetch and parse data from Google Sheets
+    let rows: string[][]
     try {
-      await fetchSheetData(googleSheetId)
+      rows = await fetchSheetData(googleSheetId)
     } catch (err) {
       console.error('Sheet access error:', err)
       return res.status(400).json({ 
@@ -92,8 +151,8 @@ router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
     const id = uuidv4()
     const customerLinkToken = uuidv4()
     const masterLinkToken = uuidv4()
-    const columnMapping = JSON.stringify({})
 
+    // Create estimate
     estimateQueries.create.run(
       id,
       req.user!.id,
@@ -101,8 +160,12 @@ router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
       title,
       customerLinkToken,
       masterLinkToken,
-      columnMapping
+      '{}'
     )
+
+    // Sync items from Google Sheets
+    syncEstimateItems(id, rows)
+    estimateQueries.updateLastSynced.run(id)
 
     res.status(201).json({
       id,
@@ -115,6 +178,183 @@ router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error('Create estimate error:', error)
     res.status(500).json({ error: 'Ошибка создания сметы' })
+  }
+})
+
+// Sync estimate with Google Sheets
+router.post('/:id/sync', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const estimate = estimateQueries.findById.get(req.params.id) as EstimateRow | undefined
+    
+    if (!estimate || estimate.brigadir_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Смета не найдена' })
+    }
+
+    // Fetch data from Google Sheets
+    const rows = await fetchSheetData(estimate.google_sheet_id)
+    
+    // Clear existing items and sections, then re-sync
+    itemQueries.deleteByEstimateId.run(estimate.id)
+    sectionQueries.deleteByEstimateId.run(estimate.id)
+    
+    // Sync new data
+    syncEstimateItems(estimate.id, rows)
+    estimateQueries.updateLastSynced.run(estimate.id)
+
+    res.json({ message: 'Синхронизация завершена', syncedAt: new Date().toISOString() })
+  } catch (error) {
+    console.error('Sync error:', error)
+    res.status(500).json({ error: 'Ошибка синхронизации' })
+  }
+})
+
+// Update section visibility
+router.put('/:id/sections/:sectionId', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const { name, showCustomer, showMaster } = req.body
+    const estimate = estimateQueries.findById.get(req.params.id) as EstimateRow | undefined
+    
+    if (!estimate || estimate.brigadir_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Смета не найдена' })
+    }
+
+    sectionQueries.update.run(
+      name,
+      showCustomer ? 1 : 0,
+      showMaster ? 1 : 0,
+      req.params.sectionId
+    )
+
+    res.json({ success: true })
+  } catch (error) {
+    console.error('Update section error:', error)
+    res.status(500).json({ error: 'Ошибка обновления раздела' })
+  }
+})
+
+// Update item
+router.put('/:id/items/:itemId', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const { name, unit, quantity, customerPrice, masterPrice, showCustomer, showMaster } = req.body
+    const estimate = estimateQueries.findById.get(req.params.id) as EstimateRow | undefined
+    
+    if (!estimate || estimate.brigadir_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Смета не найдена' })
+    }
+
+    const customerTotal = (quantity || 0) * (customerPrice || 0)
+    const masterTotal = (quantity || 0) * (masterPrice || 0)
+
+    itemQueries.update.run(
+      name,
+      unit,
+      quantity,
+      customerPrice,
+      customerTotal,
+      masterPrice,
+      masterTotal,
+      showCustomer ? 1 : 0,
+      showMaster ? 1 : 0,
+      req.params.itemId
+    )
+
+    res.json({ success: true })
+  } catch (error) {
+    console.error('Update item error:', error)
+    res.status(500).json({ error: 'Ошибка обновления позиции' })
+  }
+})
+
+// Add new item
+router.post('/:id/items', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const { sectionId, name, unit, quantity, customerPrice, masterPrice } = req.body
+    const estimate = estimateQueries.findById.get(req.params.id) as EstimateRow | undefined
+    
+    if (!estimate || estimate.brigadir_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Смета не найдена' })
+    }
+
+    const id = uuidv4()
+    const customerTotal = (quantity || 0) * (customerPrice || 0)
+    const masterTotal = (quantity || 0) * (masterPrice || 0)
+
+    // Get max sort order
+    const items = itemQueries.findBySectionId.all(sectionId) as ItemRow[]
+    const maxOrder = items.length > 0 ? Math.max(...items.map(i => i.sort_order)) : 0
+
+    itemQueries.create.run(
+      id,
+      estimate.id,
+      sectionId,
+      '', // number
+      name,
+      unit || '',
+      quantity || 0,
+      customerPrice || 0,
+      customerTotal,
+      masterPrice || 0,
+      masterTotal,
+      maxOrder + 1,
+      1, // showCustomer
+      1  // showMaster
+    )
+
+    res.status(201).json({ 
+      id,
+      name,
+      unit,
+      quantity,
+      customerPrice,
+      customerTotal,
+      masterPrice,
+      masterTotal,
+      showCustomer: true,
+      showMaster: true,
+    })
+  } catch (error) {
+    console.error('Add item error:', error)
+    res.status(500).json({ error: 'Ошибка добавления позиции' })
+  }
+})
+
+// Delete item
+router.delete('/:id/items/:itemId', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const estimate = estimateQueries.findById.get(req.params.id) as EstimateRow | undefined
+    
+    if (!estimate || estimate.brigadir_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Смета не найдена' })
+    }
+
+    itemQueries.delete.run(req.params.itemId)
+    res.status(204).send()
+  } catch (error) {
+    console.error('Delete item error:', error)
+    res.status(500).json({ error: 'Ошибка удаления позиции' })
+  }
+})
+
+// Add new section
+router.post('/:id/sections', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const { name } = req.body
+    const estimate = estimateQueries.findById.get(req.params.id) as EstimateRow | undefined
+    
+    if (!estimate || estimate.brigadir_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Смета не найдена' })
+    }
+
+    const id = uuidv4()
+    const sections = sectionQueries.findByEstimateId.all(estimate.id) as SectionRow[]
+    const maxOrder = sections.length > 0 ? Math.max(...sections.map(s => s.sort_order)) : 0
+
+    sectionQueries.create.run(id, estimate.id, name, maxOrder + 1, 1, 1)
+
+    res.status(201).json({ id, name, showCustomer: true, showMaster: true, items: [] })
+  } catch (error) {
+    console.error('Add section error:', error)
+    res.status(500).json({ error: 'Ошибка добавления раздела' })
   }
 })
 
@@ -173,7 +413,7 @@ router.delete('/:id', authMiddleware, (req: AuthRequest, res: Response) => {
   }
 })
 
-// Get customer view (public)
+// Get customer view (public) - now from database
 router.get('/customer/:token', async (req: AuthRequest, res: Response) => {
   try {
     const estimate = estimateQueries.findByCustomerToken.get(req.params.token) as EstimateRow | undefined
@@ -182,18 +422,47 @@ router.get('/customer/:token', async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Смета не найдена' })
     }
 
-    const rows = await fetchSheetData(estimate.google_sheet_id)
-    const data = parseEstimateData(rows, 'customer')
-    data.title = estimate.title
+    const sections = sectionQueries.findByEstimateId.all(estimate.id) as SectionRow[]
+    const items = itemQueries.findByEstimateId.all(estimate.id) as ItemRow[]
 
-    res.json(data)
+    // Filter for customer visibility and generate sequential numbers
+    const visibleSections = sections
+      .filter(s => s.show_customer)
+      .map(section => {
+        let itemNumber = 1
+        const sectionItems = items
+          .filter(item => item.section_id === section.id && item.show_customer)
+          .map(item => ({
+            number: String(itemNumber++),
+            name: item.name,
+            unit: item.unit,
+            quantity: item.quantity,
+            price: item.customer_price,
+            total: item.customer_total,
+          }))
+        
+        return {
+          name: section.name,
+          items: sectionItems,
+          subtotal: sectionItems.reduce((sum, i) => sum + i.total, 0),
+        }
+      })
+      .filter(s => s.items.length > 0)
+
+    const total = visibleSections.reduce((sum, s) => sum + s.subtotal, 0)
+
+    res.json({
+      title: estimate.title,
+      sections: visibleSections,
+      total,
+    })
   } catch (error) {
     console.error('Customer view error:', error)
     res.status(500).json({ error: 'Ошибка загрузки сметы' })
   }
 })
 
-// Get master view (public)
+// Get master view (public) - now from database
 router.get('/master/:token', async (req: AuthRequest, res: Response) => {
   try {
     const estimate = estimateQueries.findByMasterToken.get(req.params.token) as EstimateRow | undefined
@@ -202,16 +471,89 @@ router.get('/master/:token', async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Смета не найдена' })
     }
 
-    const rows = await fetchSheetData(estimate.google_sheet_id)
-    const data = parseEstimateData(rows, 'master')
-    data.title = estimate.title
+    const sections = sectionQueries.findByEstimateId.all(estimate.id) as SectionRow[]
+    const items = itemQueries.findByEstimateId.all(estimate.id) as ItemRow[]
 
-    res.json(data)
+    // Filter for master visibility and generate sequential numbers
+    const visibleSections = sections
+      .filter(s => s.show_master)
+      .map(section => {
+        let itemNumber = 1
+        const sectionItems = items
+          .filter(item => item.section_id === section.id && item.show_master)
+          .map(item => ({
+            number: String(itemNumber++),
+            name: item.name,
+            unit: item.unit,
+            quantity: item.quantity,
+            price: item.master_price,
+            total: item.master_total,
+          }))
+        
+        return {
+          name: section.name,
+          items: sectionItems,
+          subtotal: sectionItems.reduce((sum, i) => sum + i.total, 0),
+        }
+      })
+      .filter(s => s.items.length > 0)
+
+    const total = visibleSections.reduce((sum, s) => sum + s.subtotal, 0)
+
+    res.json({
+      title: estimate.title,
+      sections: visibleSections,
+      total,
+    })
   } catch (error) {
     console.error('Master view error:', error)
     res.status(500).json({ error: 'Ошибка загрузки сметы' })
   }
 })
 
-export default router
+// Helper function to sync items from Google Sheets
+function syncEstimateItems(estimateId: string, rows: string[][]) {
+  const customerData = parseEstimateData(rows, 'customer')
+  const masterData = parseEstimateData(rows, 'master')
 
+  // Create a map of master prices by item name
+  const masterPriceMap = new Map<string, { price: number; total: number }>()
+  masterData.sections.forEach(section => {
+    section.items.forEach(item => {
+      masterPriceMap.set(`${section.name}:${item.name}`, {
+        price: item.price,
+        total: item.total,
+      })
+    })
+  })
+
+  let sectionOrder = 0
+  for (const section of customerData.sections) {
+    const sectionId = uuidv4()
+    sectionQueries.create.run(sectionId, estimateId, section.name, sectionOrder++, 1, 1)
+
+    let itemOrder = 0
+    for (const item of section.items) {
+      const masterInfo = masterPriceMap.get(`${section.name}:${item.name}`) || { price: 0, total: 0 }
+      
+      itemQueries.create.run(
+        uuidv4(),
+        estimateId,
+        sectionId,
+        item.number,
+        item.name,
+        item.unit,
+        item.quantity,
+        item.price,
+        item.total,
+        masterInfo.price,
+        masterInfo.total,
+        itemOrder++,
+        1, // showCustomer
+        masterInfo.total > 0 ? 1 : 0 // showMaster - only if has master price
+      )
+    }
+  }
+}
+
+export default router

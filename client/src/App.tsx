@@ -6,6 +6,7 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
 import EstimateForm from './pages/EstimateForm'
+import EstimateEditor from './pages/EstimateEditor'
 import CustomerView from './pages/CustomerView'
 import MasterView from './pages/MasterView'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -47,7 +48,7 @@ function App() {
           path="estimates/:id/edit"
           element={
             <ProtectedRoute>
-              <EstimateForm />
+              <EstimateEditor />
             </ProtectedRoute>
           }
         />

@@ -28,7 +28,36 @@ export interface Estimate {
   googleSheetId: string
   customerLinkToken: string
   masterLinkToken: string
+  lastSyncedAt?: string
   createdAt: string
+}
+
+export interface EstimateItem {
+  id: string
+  number: string
+  name: string
+  unit: string
+  quantity: number
+  customerPrice: number
+  customerTotal: number
+  masterPrice: number
+  masterTotal: number
+  sortOrder: number
+  showCustomer: boolean
+  showMaster: boolean
+}
+
+export interface EstimateSection {
+  id: string
+  name: string
+  sortOrder: number
+  showCustomer: boolean
+  showMaster: boolean
+  items: EstimateItem[]
+}
+
+export interface EstimateWithSections extends Estimate {
+  sections: EstimateSection[]
 }
 
 export interface EstimateData {
@@ -39,11 +68,11 @@ export interface EstimateData {
 
 export interface Section {
   name: string
-  items: EstimateItem[]
+  items: ViewItem[]
   subtotal: number
 }
 
-export interface EstimateItem {
+export interface ViewItem {
   number: string
   name: string
   unit: string
@@ -55,12 +84,29 @@ export interface EstimateItem {
 // Estimates API
 export const estimatesApi = {
   getAll: () => api.get<Estimate[]>('/estimates'),
-  getOne: (id: string) => api.get<Estimate>(`/estimates/${id}`),
+  getOne: (id: string) => api.get<EstimateWithSections>(`/estimates/${id}`),
   create: (data: { title: string; googleSheetUrl: string }) => 
     api.post<Estimate>('/estimates', data),
   update: (id: string, data: { title: string; googleSheetUrl: string }) => 
     api.put<Estimate>(`/estimates/${id}`, data),
   delete: (id: string) => api.delete(`/estimates/${id}`),
+  
+  // Sync with Google Sheets
+  sync: (id: string) => api.post<{ message: string; syncedAt: string }>(`/estimates/${id}/sync`),
+  
+  // Sections
+  addSection: (estimateId: string, name: string) => 
+    api.post<EstimateSection>(`/estimates/${estimateId}/sections`, { name }),
+  updateSection: (estimateId: string, sectionId: string, data: { name: string; showCustomer: boolean; showMaster: boolean }) =>
+    api.put(`/estimates/${estimateId}/sections/${sectionId}`, data),
+  
+  // Items
+  addItem: (estimateId: string, data: { sectionId: string; name: string; unit: string; quantity: number; customerPrice: number; masterPrice: number }) =>
+    api.post<EstimateItem>(`/estimates/${estimateId}/items`, data),
+  updateItem: (estimateId: string, itemId: string, data: Partial<EstimateItem>) =>
+    api.put(`/estimates/${estimateId}/items/${itemId}`, data),
+  deleteItem: (estimateId: string, itemId: string) =>
+    api.delete(`/estimates/${estimateId}/items/${itemId}`),
   
   // Public views
   getCustomerView: (token: string) => 
@@ -68,4 +114,3 @@ export const estimatesApi = {
   getMasterView: (token: string) => 
     api.get<EstimateData>(`/estimates/master/${token}`),
 }
-

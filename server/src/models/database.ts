@@ -38,8 +38,46 @@ function createTables() {
       customer_link_token TEXT UNIQUE NOT NULL,
       master_link_token TEXT UNIQUE NOT NULL,
       column_mapping TEXT DEFAULT '{}',
+      last_synced_at TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (brigadir_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `)
+
+  // Create estimate_sections table (разделы сметы)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS estimate_sections (
+      id TEXT PRIMARY KEY,
+      estimate_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      show_customer INTEGER DEFAULT 1,
+      show_master INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (estimate_id) REFERENCES estimates(id) ON DELETE CASCADE
+    )
+  `)
+
+  // Create estimate_items table (позиции сметы)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS estimate_items (
+      id TEXT PRIMARY KEY,
+      estimate_id TEXT NOT NULL,
+      section_id TEXT NOT NULL,
+      number TEXT,
+      name TEXT NOT NULL,
+      unit TEXT,
+      quantity REAL DEFAULT 0,
+      customer_price REAL DEFAULT 0,
+      customer_total REAL DEFAULT 0,
+      master_price REAL DEFAULT 0,
+      master_total REAL DEFAULT 0,
+      sort_order INTEGER DEFAULT 0,
+      show_customer INTEGER DEFAULT 1,
+      show_master INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (estimate_id) REFERENCES estimates(id) ON DELETE CASCADE,
+      FOREIGN KEY (section_id) REFERENCES estimate_sections(id) ON DELETE CASCADE
     )
   `)
 
@@ -62,6 +100,9 @@ function createTables() {
     CREATE INDEX IF NOT EXISTS idx_estimates_customer_token ON estimates(customer_link_token);
     CREATE INDEX IF NOT EXISTS idx_estimates_master_token ON estimates(master_link_token);
     CREATE INDEX IF NOT EXISTS idx_access_estimate ON estimate_access(estimate_id);
+    CREATE INDEX IF NOT EXISTS idx_sections_estimate ON estimate_sections(estimate_id);
+    CREATE INDEX IF NOT EXISTS idx_items_estimate ON estimate_items(estimate_id);
+    CREATE INDEX IF NOT EXISTS idx_items_section ON estimate_items(section_id);
   `)
 }
 
@@ -72,7 +113,7 @@ export function initDatabase() {
   console.log('✅ Database initialized')
 }
 
-// User queries - created AFTER tables exist
+// User queries
 export const userQueries: Record<string, Statement> = {
   findByEmail: db.prepare('SELECT * FROM users WHERE email = ?'),
   findById: db.prepare('SELECT id, email, name, role, created_at FROM users WHERE id = ?'),
@@ -92,5 +133,49 @@ export const estimateQueries: Record<string, Statement> = {
   update: db.prepare(`
     UPDATE estimates SET google_sheet_id = ?, title = ? WHERE id = ? AND brigadir_id = ?
   `),
+  updateLastSynced: db.prepare(`
+    UPDATE estimates SET last_synced_at = datetime('now') WHERE id = ?
+  `),
   delete: db.prepare('DELETE FROM estimates WHERE id = ? AND brigadir_id = ?'),
+}
+
+// Section queries
+export const sectionQueries: Record<string, Statement> = {
+  findByEstimateId: db.prepare('SELECT * FROM estimate_sections WHERE estimate_id = ? ORDER BY sort_order'),
+  findById: db.prepare('SELECT * FROM estimate_sections WHERE id = ?'),
+  create: db.prepare(`
+    INSERT INTO estimate_sections (id, estimate_id, name, sort_order, show_customer, show_master)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `),
+  update: db.prepare(`
+    UPDATE estimate_sections SET name = ?, show_customer = ?, show_master = ? WHERE id = ?
+  `),
+  delete: db.prepare('DELETE FROM estimate_sections WHERE id = ?'),
+  deleteByEstimateId: db.prepare('DELETE FROM estimate_sections WHERE estimate_id = ?'),
+}
+
+// Item queries
+export const itemQueries: Record<string, Statement> = {
+  findByEstimateId: db.prepare(`
+    SELECT * FROM estimate_items WHERE estimate_id = ? ORDER BY sort_order
+  `),
+  findBySectionId: db.prepare(`
+    SELECT * FROM estimate_items WHERE section_id = ? ORDER BY sort_order
+  `),
+  findById: db.prepare('SELECT * FROM estimate_items WHERE id = ?'),
+  create: db.prepare(`
+    INSERT INTO estimate_items (id, estimate_id, section_id, number, name, unit, quantity, 
+      customer_price, customer_total, master_price, master_total, sort_order, show_customer, show_master)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `),
+  update: db.prepare(`
+    UPDATE estimate_items SET 
+      name = ?, unit = ?, quantity = ?, 
+      customer_price = ?, customer_total = ?, 
+      master_price = ?, master_total = ?,
+      show_customer = ?, show_master = ?
+    WHERE id = ?
+  `),
+  delete: db.prepare('DELETE FROM estimate_items WHERE id = ?'),
+  deleteByEstimateId: db.prepare('DELETE FROM estimate_items WHERE estimate_id = ?'),
 }
