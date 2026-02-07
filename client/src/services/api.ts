@@ -144,4 +144,12 @@ export const estimatesApi = {
     api.post<{ message: string; restoredFrom: { versionNumber: number; name: string | null } }>(
       `/estimates/${estimateId}/versions/${versionId}/restore`
     ),
+
+  // Act images
+  getActImages: (estimateId: string) =>
+    api.get<Record<string, string>>(`/estimates/${estimateId}/act-images`),
+  uploadActImage: (estimateId: string, imageType: 'logo' | 'stamp' | 'signature', data: string) =>
+    api.post<{ success: boolean; imageType: string }>(`/estimates/${estimateId}/act-images`, { imageType, data }),
+  deleteActImage: (estimateId: string, imageType: 'logo' | 'stamp' | 'signature') =>
+    api.delete(`/estimates/${estimateId}/act-images/${imageType}`),
 }

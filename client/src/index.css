@@ -41,6 +41,12 @@ body {
   }
 }
 
+/* Date/time input calendar icon — match text color in dark theme */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.8);
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;

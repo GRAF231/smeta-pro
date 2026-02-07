@@ -143,6 +143,19 @@ function createTables() {
     )
   `)
 
+  // Create estimate_act_images table (изображения для актов)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS estimate_act_images (
+      id TEXT PRIMARY KEY,
+      estimate_id TEXT NOT NULL,
+      image_type TEXT NOT NULL CHECK(image_type IN ('logo', 'stamp', 'signature')),
+      data TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (estimate_id) REFERENCES estimates(id) ON DELETE CASCADE,
+      UNIQUE(estimate_id, image_type)
+    )
+  `)
+
   // Migration: add master_password column if not exists
   const estimateColumns = db.prepare("PRAGMA table_info(estimates)").all() as { name: string }[]
   if (!estimateColumns.some(col => col.name === 'master_password')) {
@@ -162,6 +175,7 @@ function createTables() {
     CREATE INDEX IF NOT EXISTS idx_version_sections_version ON estimate_version_sections(version_id);
     CREATE INDEX IF NOT EXISTS idx_version_items_version ON estimate_version_items(version_id);
     CREATE INDEX IF NOT EXISTS idx_version_items_section ON estimate_version_items(version_section_id);
+    CREATE INDEX IF NOT EXISTS idx_act_images_estimate ON estimate_act_images(estimate_id);
   `)
 }
 
@@ -267,6 +281,18 @@ export const versionSectionQueries: Record<string, Statement> = {
     INSERT INTO estimate_version_sections (id, version_id, original_section_id, name, sort_order, show_customer, show_master)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `),
+}
+
+// Act image queries
+export const actImageQueries: Record<string, Statement> = {
+  findByEstimateId: db.prepare('SELECT * FROM estimate_act_images WHERE estimate_id = ?'),
+  findByEstimateAndType: db.prepare('SELECT * FROM estimate_act_images WHERE estimate_id = ? AND image_type = ?'),
+  upsert: db.prepare(`
+    INSERT INTO estimate_act_images (id, estimate_id, image_type, data)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(estimate_id, image_type) DO UPDATE SET data = excluded.data
+  `),
+  delete: db.prepare('DELETE FROM estimate_act_images WHERE estimate_id = ? AND image_type = ?'),
 }
 
 // Version item queries

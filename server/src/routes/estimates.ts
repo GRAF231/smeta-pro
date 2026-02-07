@@ -7,6 +7,7 @@ import {
   versionQueries, 
   versionSectionQueries, 
   versionItemQueries,
+  actImageQueries,
   db 
 } from '../models/database'
 import { authMiddleware, AuthRequest } from '../middleware/auth'
@@ -845,6 +846,91 @@ router.post('/:id/versions/:versionId/restore', authMiddleware, (req: AuthReques
   } catch (error) {
     console.error('Restore version error:', error)
     res.status(500).json({ error: 'Ошибка восстановления версии' })
+  }
+})
+
+// ========== ACT IMAGES ENDPOINTS ==========
+
+interface ActImageRow {
+  id: string
+  estimate_id: string
+  image_type: string
+  data: string
+  created_at: string
+}
+
+// Get all act images for an estimate
+router.get('/:id/act-images', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const estimate = estimateQueries.findById.get(req.params.id) as EstimateRow | undefined
+    
+    if (!estimate || estimate.brigadir_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Смета не найдена' })
+    }
+
+    const images = actImageQueries.findByEstimateId.all(estimate.id) as ActImageRow[]
+    
+    const result: Record<string, string> = {}
+    images.forEach(img => {
+      result[img.image_type] = img.data
+    })
+
+    res.json(result)
+  } catch (error) {
+    console.error('Get act images error:', error)
+    res.status(500).json({ error: 'Ошибка получения изображений' })
+  }
+})
+
+// Upload/replace an act image
+router.post('/:id/act-images', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const { imageType, data } = req.body
+    
+    if (!imageType || !data) {
+      return res.status(400).json({ error: 'Тип изображения и данные обязательны' })
+    }
+
+    if (!['logo', 'stamp', 'signature'].includes(imageType)) {
+      return res.status(400).json({ error: 'Неверный тип изображения. Допустимые: logo, stamp, signature' })
+    }
+
+    const estimate = estimateQueries.findById.get(req.params.id) as EstimateRow | undefined
+    
+    if (!estimate || estimate.brigadir_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Смета не найдена' })
+    }
+
+    const id = uuidv4()
+    actImageQueries.upsert.run(id, estimate.id, imageType, data)
+
+    res.json({ success: true, imageType })
+  } catch (error) {
+    console.error('Upload act image error:', error)
+    res.status(500).json({ error: 'Ошибка загрузки изображения' })
+  }
+})
+
+// Delete an act image
+router.delete('/:id/act-images/:imageType', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const { imageType } = req.params
+    
+    if (!['logo', 'stamp', 'signature'].includes(imageType)) {
+      return res.status(400).json({ error: 'Неверный тип изображения' })
+    }
+
+    const estimate = estimateQueries.findById.get(req.params.id) as EstimateRow | undefined
+    
+    if (!estimate || estimate.brigadir_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Смета не найдена' })
+    }
+
+    actImageQueries.delete.run(estimate.id, imageType)
+    res.json({ success: true })
+  } catch (error) {
+    console.error('Delete act image error:', error)
+    res.status(500).json({ error: 'Ошибка удаления изображения' })
   }
 })
 
