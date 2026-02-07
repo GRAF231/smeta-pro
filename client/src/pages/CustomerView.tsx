@@ -54,10 +54,10 @@ export default function CustomerView() {
     <div className="min-h-screen bg-slate-900">
       {/* Header for print */}
       <header className="border-b border-slate-700/50 bg-slate-900/95 sticky top-0 z-10 no-print">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+        <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 py-3 sm:py-4 flex justify-between items-center">
           <div>
-            <h1 className="font-display text-xl font-semibold text-white">{data.title}</h1>
-            <p className="text-sm text-slate-400">Смета для заказчика</p>
+            <h1 className="font-display text-lg sm:text-xl font-semibold text-white">{data.title}</h1>
+            <p className="text-xs sm:text-sm text-slate-400">Смета для заказчика</p>
           </div>
           <button
             onClick={() => window.print()}
@@ -79,7 +79,7 @@ export default function CustomerView() {
         <p className="text-gray-500">Смета на ремонтные работы</p>
       </div>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-1 sm:px-6 lg:px-8 py-3 sm:py-8">
         <EstimateTable data={data} variant="customer" />
       </main>
     </div>

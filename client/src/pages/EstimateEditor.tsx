@@ -447,7 +447,7 @@ export default function EstimateEditor() {
         {estimate.sections.map(section => (
           <div key={section.id} className="card overflow-hidden">
             {/* Section header */}
-            <div className="flex items-center justify-between -mx-6 -mt-6 mb-4 px-6 py-4 bg-slate-700/30 border-b border-slate-700/50">
+            <div className="flex items-center justify-between -mx-3 sm:-mx-6 -mt-3 sm:-mt-6 mb-3 sm:mb-4 px-3 sm:px-6 py-3 sm:py-4 bg-slate-700/30 border-b border-slate-700/50">
               <h2 className="font-display font-semibold text-lg text-white">{section.name}</h2>
               <div className="flex items-center gap-3">
                 <button
@@ -476,20 +476,20 @@ export default function EstimateEditor() {
             </div>
 
             {/* Items table */}
-            <div className="overflow-x-auto -mx-6">
-              <table className="w-full min-w-[900px] text-sm">
+            <div className="overflow-x-auto -mx-3 sm:-mx-6">
+              <table className="w-full min-w-[900px] text-xs sm:text-sm">
                 <thead>
                   <tr className="text-left text-slate-400 border-b border-slate-700/50">
-                    <th className="px-3 py-2 w-10">З</th>
-                    <th className="px-3 py-2 w-10">М</th>
-                    <th className="px-3 py-2">Наименование</th>
-                    <th className="px-3 py-2 w-20">Ед.</th>
-                    <th className="px-3 py-2 w-24 text-right">Кол-во</th>
-                    <th className="px-3 py-2 w-28 text-right">Цена З</th>
-                    <th className="px-3 py-2 w-32 text-right">Сумма З</th>
-                    <th className="px-3 py-2 w-28 text-right">Цена М</th>
-                    <th className="px-3 py-2 w-32 text-right">Сумма М</th>
-                    <th className="px-3 py-2 w-24"></th>
+                    <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-8 sm:w-10">З</th>
+                    <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-8 sm:w-10">М</th>
+                    <th className="px-1.5 sm:px-3 py-1.5 sm:py-2">Наименование</th>
+                    <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-14 sm:w-20">Ед.</th>
+                    <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-16 sm:w-24 text-right">Кол-во</th>
+                    <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-20 sm:w-28 text-right">Цена З</th>
+                    <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-24 sm:w-32 text-right">Сумма З</th>
+                    <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-20 sm:w-28 text-right">Цена М</th>
+                    <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-24 sm:w-32 text-right">Сумма М</th>
+                    <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-16 sm:w-24"></th>
                   </tr>
                 </thead>
                 <tbody>
