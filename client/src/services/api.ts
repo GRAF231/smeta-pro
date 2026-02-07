@@ -28,6 +28,7 @@ export interface Estimate {
   googleSheetId: string
   customerLinkToken: string
   masterLinkToken: string
+  masterPassword?: string
   lastSyncedAt?: string
   createdAt: string
 }
@@ -75,6 +76,7 @@ export interface EstimateData {
   title: string
   sections: Section[]
   total: number
+  requiresPassword?: boolean
 }
 
 export interface Section {
@@ -124,6 +126,12 @@ export const estimatesApi = {
     api.get<EstimateData>(`/estimates/customer/${token}`),
   getMasterView: (token: string) => 
     api.get<EstimateData>(`/estimates/master/${token}`),
+  verifyMasterPassword: (token: string, password: string) =>
+    api.post<EstimateData>(`/estimates/master/${token}/verify`, { password }),
+  
+  // Master password
+  setMasterPassword: (estimateId: string, password: string) =>
+    api.put<{ success: boolean; masterPassword: string }>(`/estimates/${estimateId}/master-password`, { password }),
   
   // Versions
   getVersions: (estimateId: string) =>

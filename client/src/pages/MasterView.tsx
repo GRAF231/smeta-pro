@@ -8,6 +8,13 @@ export default function MasterView() {
   const [data, setData] = useState<EstimateData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
+  
+  // Password gate state
+  const [requiresPassword, setRequiresPassword] = useState(false)
+  const [estimateTitle, setEstimateTitle] = useState('')
+  const [password, setPassword] = useState('')
+  const [passwordError, setPasswordError] = useState('')
+  const [isVerifying, setIsVerifying] = useState(false)
 
   useEffect(() => {
     if (token) {
@@ -18,11 +25,38 @@ export default function MasterView() {
   const loadEstimate = async (linkToken: string) => {
     try {
       const res = await estimatesApi.getMasterView(linkToken)
-      setData(res.data)
+      if (res.data.requiresPassword) {
+        setRequiresPassword(true)
+        setEstimateTitle(res.data.title)
+      } else {
+        setData(res.data)
+      }
     } catch {
       setError('Смета не найдена или ссылка недействительна')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!token || !password.trim()) return
+
+    setIsVerifying(true)
+    setPasswordError('')
+
+    try {
+      const res = await estimatesApi.verifyMasterPassword(token, password.trim())
+      setData(res.data)
+      setRequiresPassword(false)
+    } catch (err: any) {
+      if (err.response?.status === 403) {
+        setPasswordError('Неверная кодовая фраза. Попробуйте ещё раз.')
+      } else {
+        setPasswordError('Ошибка проверки. Попробуйте позже.')
+      }
+    } finally {
+      setIsVerifying(false)
     }
   }
 
@@ -34,7 +68,7 @@ export default function MasterView() {
     )
   }
 
-  if (error || !data) {
+  if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-900 px-4">
         <div className="card text-center max-w-md">
@@ -45,6 +79,79 @@ export default function MasterView() {
           </div>
           <h1 className="text-xl font-semibold text-white mb-2">Ошибка</h1>
           <p className="text-slate-400">{error}</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Password gate screen
+  if (requiresPassword && !data) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-900 px-4">
+        <div className="card max-w-md w-full">
+          <div className="text-center mb-6">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-accent-500/10 flex items-center justify-center">
+              <svg className="w-8 h-8 text-accent-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            </div>
+            <h1 className="text-xl font-semibold text-white mb-1">Доступ ограничен</h1>
+            <p className="text-slate-400 text-sm">
+              {estimateTitle && <span className="block text-slate-300 font-medium mb-1">{estimateTitle}</span>}
+              Для просмотра сметы введите кодовую фразу
+            </p>
+          </div>
+
+          <form onSubmit={handlePasswordSubmit} className="space-y-4">
+            <div>
+              <input
+                type="text"
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); setPasswordError('') }}
+                placeholder="Введите кодовую фразу..."
+                className="input-field w-full text-center text-lg tracking-wide"
+                autoFocus
+                autoComplete="off"
+              />
+            </div>
+            
+            {passwordError && (
+              <div className="text-red-400 text-sm text-center bg-red-500/10 border border-red-500/20 rounded-lg py-2 px-3">
+                {passwordError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isVerifying || !password.trim()}
+              className="btn-primary w-full flex items-center justify-center gap-2"
+            >
+              {isVerifying ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
+                  Проверка...
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                  </svg>
+                  Открыть смету
+                </>
+              )}
+            </button>
+          </form>
+        </div>
+      </div>
+    )
+  }
+
+  if (!data) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-900 px-4">
+        <div className="card text-center max-w-md">
+          <h1 className="text-xl font-semibold text-white mb-2">Ошибка</h1>
+          <p className="text-slate-400">Смета не найдена</p>
         </div>
       </div>
     )
@@ -85,4 +192,3 @@ export default function MasterView() {
     </div>
   )
 }
-

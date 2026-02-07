@@ -143,6 +143,12 @@ function createTables() {
     )
   `)
 
+  // Migration: add master_password column if not exists
+  const estimateColumns = db.prepare("PRAGMA table_info(estimates)").all() as { name: string }[]
+  if (!estimateColumns.some(col => col.name === 'master_password')) {
+    db.exec(`ALTER TABLE estimates ADD COLUMN master_password TEXT DEFAULT NULL`)
+  }
+
   // Create indexes
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_estimates_brigadir ON estimates(brigadir_id);
@@ -185,6 +191,9 @@ export const estimateQueries: Record<string, Statement> = {
   `),
   update: db.prepare(`
     UPDATE estimates SET google_sheet_id = ?, title = ? WHERE id = ? AND brigadir_id = ?
+  `),
+  updateMasterPassword: db.prepare(`
+    UPDATE estimates SET master_password = ? WHERE id = ? AND brigadir_id = ?
   `),
   updateLastSynced: db.prepare(`
     UPDATE estimates SET last_synced_at = datetime('now') WHERE id = ?

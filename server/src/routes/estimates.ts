@@ -26,6 +26,7 @@ interface EstimateRow {
   customer_link_token: string
   master_link_token: string
   column_mapping: string
+  master_password: string | null
   last_synced_at: string | null
   created_at: string
 }
@@ -103,6 +104,7 @@ router.get('/', authMiddleware, (req: AuthRequest, res: Response) => {
       googleSheetId: e.google_sheet_id,
       customerLinkToken: e.customer_link_token,
       masterLinkToken: e.master_link_token,
+      masterPassword: e.master_password || '',
       lastSyncedAt: e.last_synced_at,
       createdAt: e.created_at,
     })))
@@ -155,6 +157,7 @@ router.get('/:id', authMiddleware, (req: AuthRequest, res: Response) => {
       googleSheetId: estimate.google_sheet_id,
       customerLinkToken: estimate.customer_link_token,
       masterLinkToken: estimate.master_link_token,
+      masterPassword: estimate.master_password || '',
       lastSyncedAt: estimate.last_synced_at,
       createdAt: estimate.created_at,
       sections: sectionsWithItems,
@@ -506,6 +509,65 @@ router.get('/customer/:token', async (req: AuthRequest, res: Response) => {
   }
 })
 
+// Set/update master password
+router.put('/:id/master-password', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const { password } = req.body
+    const estimate = estimateQueries.findById.get(req.params.id) as EstimateRow | undefined
+    
+    if (!estimate || estimate.brigadir_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Смета не найдена' })
+    }
+
+    // Allow empty string to remove password
+    const masterPassword = password && password.trim() ? password.trim() : null
+    estimateQueries.updateMasterPassword.run(masterPassword, req.params.id, req.user!.id)
+
+    res.json({ success: true, masterPassword: masterPassword || '' })
+  } catch (error) {
+    console.error('Update master password error:', error)
+    res.status(500).json({ error: 'Ошибка обновления пароля' })
+  }
+})
+
+// Helper to build master view data
+function buildMasterViewData(estimate: EstimateRow) {
+  const sections = sectionQueries.findByEstimateId.all(estimate.id) as SectionRow[]
+  const items = itemQueries.findByEstimateId.all(estimate.id) as ItemRow[]
+
+  // Filter for master visibility and generate sequential numbers
+  const visibleSections = sections
+    .filter(s => s.show_master)
+    .map(section => {
+      let itemNumber = 1
+      const sectionItems = items
+        .filter(item => item.section_id === section.id && item.show_master)
+        .map(item => ({
+          number: String(itemNumber++),
+          name: item.name,
+          unit: item.unit,
+          quantity: item.quantity,
+          price: item.master_price,
+          total: item.master_total,
+        }))
+      
+      return {
+        name: section.name,
+        items: sectionItems,
+        subtotal: sectionItems.reduce((sum, i) => sum + i.total, 0),
+      }
+    })
+    .filter(s => s.items.length > 0)
+
+  const total = visibleSections.reduce((sum, s) => sum + s.subtotal, 0)
+
+  return {
+    title: estimate.title,
+    sections: visibleSections,
+    total,
+  }
+}
+
 // Get master view (public) - now from database
 router.get('/master/:token', async (req: AuthRequest, res: Response) => {
   try {
@@ -515,42 +577,40 @@ router.get('/master/:token', async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: 'Смета не найдена' })
     }
 
-    const sections = sectionQueries.findByEstimateId.all(estimate.id) as SectionRow[]
-    const items = itemQueries.findByEstimateId.all(estimate.id) as ItemRow[]
-
-    // Filter for master visibility and generate sequential numbers
-    const visibleSections = sections
-      .filter(s => s.show_master)
-      .map(section => {
-        let itemNumber = 1
-        const sectionItems = items
-          .filter(item => item.section_id === section.id && item.show_master)
-          .map(item => ({
-            number: String(itemNumber++),
-            name: item.name,
-            unit: item.unit,
-            quantity: item.quantity,
-            price: item.master_price,
-            total: item.master_total,
-          }))
-        
-        return {
-          name: section.name,
-          items: sectionItems,
-          subtotal: sectionItems.reduce((sum, i) => sum + i.total, 0),
-        }
+    // If master password is set, require verification
+    if (estimate.master_password) {
+      return res.json({
+        requiresPassword: true,
+        title: estimate.title,
       })
-      .filter(s => s.items.length > 0)
+    }
 
-    const total = visibleSections.reduce((sum, s) => sum + s.subtotal, 0)
-
-    res.json({
-      title: estimate.title,
-      sections: visibleSections,
-      total,
-    })
+    // No password set — return data directly
+    res.json(buildMasterViewData(estimate))
   } catch (error) {
     console.error('Master view error:', error)
+    res.status(500).json({ error: 'Ошибка загрузки сметы' })
+  }
+})
+
+// Verify master password and return data
+router.post('/master/:token/verify', async (req: AuthRequest, res: Response) => {
+  try {
+    const { password } = req.body
+    const estimate = estimateQueries.findByMasterToken.get(req.params.token) as EstimateRow | undefined
+    
+    if (!estimate) {
+      return res.status(404).json({ error: 'Смета не найдена' })
+    }
+
+    // Check password
+    if (estimate.master_password && estimate.master_password !== (password || '').trim()) {
+      return res.status(403).json({ error: 'Неверная кодовая фраза' })
+    }
+
+    res.json(buildMasterViewData(estimate))
+  } catch (error) {
+    console.error('Master verify error:', error)
     res.status(500).json({ error: 'Ошибка загрузки сметы' })
   }
 })

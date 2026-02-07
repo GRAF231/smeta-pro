@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { 
   estimatesApi, 
@@ -30,6 +30,13 @@ export default function EstimateEditor() {
   const [isLoadingVersions, setIsLoadingVersions] = useState(false)
   const [isRestoringVersion, setIsRestoringVersion] = useState(false)
 
+  // Master password state
+  const [masterPassword, setMasterPassword] = useState('')
+  const [masterPasswordInput, setMasterPasswordInput] = useState('')
+  const [isSavingPassword, setIsSavingPassword] = useState(false)
+  const [passwordSaved, setPasswordSaved] = useState(false)
+  const passwordTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
+
   useEffect(() => {
     if (id) loadEstimate(id)
   }, [id])
@@ -38,6 +45,8 @@ export default function EstimateEditor() {
     try {
       const res = await estimatesApi.getOne(estimateId)
       setEstimate(res.data)
+      setMasterPassword(res.data.masterPassword || '')
+      setMasterPasswordInput(res.data.masterPassword || '')
     } catch {
       setError('Ошибка загрузки сметы')
     } finally {
@@ -242,6 +251,22 @@ export default function EstimateEditor() {
     }
   }
 
+  const handleSaveMasterPassword = async () => {
+    if (!id) return
+    setIsSavingPassword(true)
+    try {
+      await estimatesApi.setMasterPassword(id, masterPasswordInput.trim())
+      setMasterPassword(masterPasswordInput.trim())
+      setPasswordSaved(true)
+      if (passwordTimeoutRef.current) clearTimeout(passwordTimeoutRef.current)
+      passwordTimeoutRef.current = setTimeout(() => setPasswordSaved(false), 2000)
+    } catch {
+      setError('Ошибка сохранения кодовой фразы')
+    } finally {
+      setIsSavingPassword(false)
+    }
+  }
+
   const formatNumber = (num: number) => new Intl.NumberFormat('ru-RU').format(num)
 
   const calculateTotals = () => {
@@ -341,6 +366,52 @@ export default function EstimateEditor() {
           <p className="text-sm text-slate-400 mb-1">Итого для мастеров</p>
           <p className="font-display text-2xl font-bold text-accent-400">{formatNumber(totals.masterTotal)} ₽</p>
         </div>
+      </div>
+
+      {/* Master password */}
+      <div className="card mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-accent-500/10 flex items-center justify-center flex-shrink-0">
+              <svg className="w-4 h-4 text-accent-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            </div>
+            <span className="text-sm text-slate-300 whitespace-nowrap">Кодовая фраза для сметы мастера:</span>
+          </div>
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <input
+              type="text"
+              value={masterPasswordInput}
+              onChange={(e) => { setMasterPasswordInput(e.target.value); setPasswordSaved(false) }}
+              placeholder="Не установлена (смета открыта без пароля)"
+              className="input-field flex-1 text-sm py-2"
+            />
+            <button
+              onClick={handleSaveMasterPassword}
+              disabled={isSavingPassword || masterPasswordInput === masterPassword}
+              className={`px-4 py-2 text-sm rounded-lg font-medium transition-all whitespace-nowrap ${
+                passwordSaved
+                  ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                  : masterPasswordInput !== masterPassword
+                    ? 'bg-accent-500 text-white hover:bg-accent-600'
+                    : 'bg-slate-700/50 text-slate-500 cursor-not-allowed'
+              }`}
+            >
+              {isSavingPassword ? 'Сохранение...' : passwordSaved ? 'Сохранено!' : 'Сохранить'}
+            </button>
+          </div>
+        </div>
+        {masterPassword && (
+          <p className="text-xs text-slate-500 mt-2 ml-10">
+            Мастеру потребуется ввести эту фразу, чтобы открыть смету. Оставьте поле пустым и сохраните, чтобы снять защиту.
+          </p>
+        )}
+        {!masterPassword && (
+          <p className="text-xs text-slate-500 mt-2 ml-10">
+            Введите кодовую фразу, чтобы защитить смету мастера от случайного просмотра заказчиком.
+          </p>
+        )}
       </div>
 
       {/* Legend */}
