@@ -914,7 +914,7 @@ router.post('/:id/act-images', authMiddleware, (req: AuthRequest, res: Response)
 // Delete an act image
 router.delete('/:id/act-images/:imageType', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
-    const { imageType } = req.params
+    const imageType = req.params.imageType as string
     
     if (!['logo', 'stamp', 'signature'].includes(imageType)) {
       return res.status(400).json({ error: 'Неверный тип изображения' })
