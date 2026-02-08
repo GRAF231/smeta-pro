@@ -100,6 +100,19 @@ export default function EstimatePage() {
     }
   }
 
+  const handleDuplicateView = async (viewId: string) => {
+    if (!id || !project) return
+    try {
+      const res = await projectsApi.duplicateView(id, viewId)
+      const updatedProject = { ...project, views: [...project.views, res.data] }
+      setProject(updatedProject)
+      setActiveViewId(res.data.id)
+      await loadProject(id)
+    } catch {
+      setError('Ошибка дублирования представления')
+    }
+  }
+
   const handleDeleteView = async (viewId: string) => {
     if (!id || !project) return
     const view = project.views.find(v => v.id === viewId)
@@ -495,16 +508,29 @@ export default function EstimatePage() {
                   {formatNumber(totals[view.id] || 0)} ₽
                 </span>
               </button>
-              {activeViewId === view.id && project.views.length > 1 && (
-                <button
-                  onClick={() => handleDeleteView(view.id)}
-                  className="ml-0.5 p-1 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                  title="Удалить"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+              {activeViewId === view.id && (
+                <>
+                  <button
+                    onClick={() => handleDuplicateView(view.id)}
+                    className="ml-0.5 p-1 text-slate-500 hover:text-primary-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Дублировать"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  </button>
+                  {project.views.length > 1 && (
+                    <button
+                      onClick={() => handleDeleteView(view.id)}
+                      className="p-1 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="Удалить"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </>
               )}
             </div>
           ))}
