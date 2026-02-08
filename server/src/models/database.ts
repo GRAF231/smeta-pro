@@ -1,6 +1,7 @@
 import Database, { Database as DatabaseType, Statement } from 'better-sqlite3'
 import path from 'path'
 import fs from 'fs'
+import { v4 as uuidv4 } from 'uuid'
 
 // Ensure data directory exists
 const dataDir = path.join(__dirname, '../../data')
@@ -28,7 +29,7 @@ function createTables() {
     )
   `)
 
-  // Create estimates table
+  // Create estimates table (legacy columns customer_link_token, master_link_token, master_password kept for compat)
   db.exec(`
     CREATE TABLE IF NOT EXISTS estimates (
       id TEXT PRIMARY KEY,
@@ -44,7 +45,7 @@ function createTables() {
     )
   `)
 
-  // Create estimate_sections table (разделы сметы)
+  // Create estimate_sections table (legacy columns show_customer, show_master kept)
   db.exec(`
     CREATE TABLE IF NOT EXISTS estimate_sections (
       id TEXT PRIMARY KEY,
@@ -58,7 +59,7 @@ function createTables() {
     )
   `)
 
-  // Create estimate_items table (позиции сметы)
+  // Create estimate_items table (legacy columns customer_price etc. kept)
   db.exec(`
     CREATE TABLE IF NOT EXISTS estimate_items (
       id TEXT PRIMARY KEY,
@@ -94,7 +95,51 @@ function createTables() {
     )
   `)
 
-  // Create estimate_versions table (версии смет)
+  // ========== NEW: estimate_views ==========
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS estimate_views (
+      id TEXT PRIMARY KEY,
+      estimate_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      link_token TEXT UNIQUE NOT NULL,
+      password TEXT DEFAULT NULL,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (estimate_id) REFERENCES estimates(id) ON DELETE CASCADE
+    )
+  `)
+
+  // ========== NEW: view_section_settings ==========
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS view_section_settings (
+      id TEXT PRIMARY KEY,
+      view_id TEXT NOT NULL,
+      section_id TEXT NOT NULL,
+      visible INTEGER DEFAULT 1,
+      FOREIGN KEY (view_id) REFERENCES estimate_views(id) ON DELETE CASCADE,
+      FOREIGN KEY (section_id) REFERENCES estimate_sections(id) ON DELETE CASCADE,
+      UNIQUE(view_id, section_id)
+    )
+  `)
+
+  // ========== NEW: view_item_settings ==========
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS view_item_settings (
+      id TEXT PRIMARY KEY,
+      view_id TEXT NOT NULL,
+      item_id TEXT NOT NULL,
+      price REAL DEFAULT 0,
+      total REAL DEFAULT 0,
+      visible INTEGER DEFAULT 1,
+      FOREIGN KEY (view_id) REFERENCES estimate_views(id) ON DELETE CASCADE,
+      FOREIGN KEY (item_id) REFERENCES estimate_items(id) ON DELETE CASCADE,
+      UNIQUE(view_id, item_id)
+    )
+  `)
+
+  // ========== VERSION TABLES ==========
+
+  // Create estimate_versions table
   db.exec(`
     CREATE TABLE IF NOT EXISTS estimate_versions (
       id TEXT PRIMARY KEY,
@@ -106,7 +151,7 @@ function createTables() {
     )
   `)
 
-  // Create estimate_version_sections table (разделы версии)
+  // Create estimate_version_sections table (legacy columns kept)
   db.exec(`
     CREATE TABLE IF NOT EXISTS estimate_version_sections (
       id TEXT PRIMARY KEY,
@@ -120,7 +165,7 @@ function createTables() {
     )
   `)
 
-  // Create estimate_version_items table (позиции версии)
+  // Create estimate_version_items table (legacy columns kept)
   db.exec(`
     CREATE TABLE IF NOT EXISTS estimate_version_items (
       id TEXT PRIMARY KEY,
@@ -143,7 +188,47 @@ function createTables() {
     )
   `)
 
-  // Create estimate_act_images table (изображения для актов)
+  // ========== NEW: Version view tables ==========
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS estimate_version_views (
+      id TEXT PRIMARY KEY,
+      version_id TEXT NOT NULL,
+      original_view_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      FOREIGN KEY (version_id) REFERENCES estimate_versions(id) ON DELETE CASCADE
+    )
+  `)
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS version_view_section_settings (
+      id TEXT PRIMARY KEY,
+      version_id TEXT NOT NULL,
+      version_view_id TEXT NOT NULL,
+      version_section_id TEXT NOT NULL,
+      visible INTEGER DEFAULT 1,
+      FOREIGN KEY (version_id) REFERENCES estimate_versions(id) ON DELETE CASCADE,
+      FOREIGN KEY (version_view_id) REFERENCES estimate_version_views(id) ON DELETE CASCADE,
+      FOREIGN KEY (version_section_id) REFERENCES estimate_version_sections(id) ON DELETE CASCADE
+    )
+  `)
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS version_view_item_settings (
+      id TEXT PRIMARY KEY,
+      version_id TEXT NOT NULL,
+      version_view_id TEXT NOT NULL,
+      version_item_id TEXT NOT NULL,
+      price REAL DEFAULT 0,
+      total REAL DEFAULT 0,
+      visible INTEGER DEFAULT 1,
+      FOREIGN KEY (version_id) REFERENCES estimate_versions(id) ON DELETE CASCADE,
+      FOREIGN KEY (version_view_id) REFERENCES estimate_version_views(id) ON DELETE CASCADE,
+      FOREIGN KEY (version_item_id) REFERENCES estimate_version_items(id) ON DELETE CASCADE
+    )
+  `)
+
+  // Create estimate_act_images table
   db.exec(`
     CREATE TABLE IF NOT EXISTS estimate_act_images (
       id TEXT PRIMARY KEY,
@@ -156,7 +241,7 @@ function createTables() {
     )
   `)
 
-  // Create estimate_materials table (материалы проекта)
+  // Create estimate_materials table
   db.exec(`
     CREATE TABLE IF NOT EXISTS estimate_materials (
       id TEXT PRIMARY KEY,
@@ -198,11 +283,92 @@ function createTables() {
     CREATE INDEX IF NOT EXISTS idx_version_items_section ON estimate_version_items(version_section_id);
     CREATE INDEX IF NOT EXISTS idx_act_images_estimate ON estimate_act_images(estimate_id);
     CREATE INDEX IF NOT EXISTS idx_materials_estimate ON estimate_materials(estimate_id);
+    CREATE INDEX IF NOT EXISTS idx_views_estimate ON estimate_views(estimate_id);
+    CREATE INDEX IF NOT EXISTS idx_views_link_token ON estimate_views(link_token);
+    CREATE INDEX IF NOT EXISTS idx_view_section_settings_view ON view_section_settings(view_id);
+    CREATE INDEX IF NOT EXISTS idx_view_section_settings_section ON view_section_settings(section_id);
+    CREATE INDEX IF NOT EXISTS idx_view_item_settings_view ON view_item_settings(view_id);
+    CREATE INDEX IF NOT EXISTS idx_view_item_settings_item ON view_item_settings(item_id);
+    CREATE INDEX IF NOT EXISTS idx_version_views_version ON estimate_version_views(version_id);
+    CREATE INDEX IF NOT EXISTS idx_version_view_section_settings_version ON version_view_section_settings(version_id);
+    CREATE INDEX IF NOT EXISTS idx_version_view_item_settings_version ON version_view_item_settings(version_id);
   `)
+}
+
+// Migrate legacy customer/master data to new estimate_views system
+function migrateToViews() {
+  // Check if migration is needed: estimates exist but no views
+  const estimateCount = (db.prepare('SELECT COUNT(*) as cnt FROM estimates').get() as { cnt: number }).cnt
+  const viewCount = (db.prepare('SELECT COUNT(*) as cnt FROM estimate_views').get() as { cnt: number }).cnt
+
+  if (estimateCount === 0 || viewCount > 0) {
+    return // nothing to migrate or already migrated
+  }
+
+  console.log(`[Migration] Migrating ${estimateCount} estimates to new views system...`)
+
+  const estimates = db.prepare('SELECT * FROM estimates').all() as any[]
+
+  const insertView = db.prepare(`
+    INSERT INTO estimate_views (id, estimate_id, name, link_token, password, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `)
+  const insertViewSectionSetting = db.prepare(`
+    INSERT OR IGNORE INTO view_section_settings (id, view_id, section_id, visible)
+    VALUES (?, ?, ?, ?)
+  `)
+  const insertViewItemSetting = db.prepare(`
+    INSERT OR IGNORE INTO view_item_settings (id, view_id, item_id, price, total, visible)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `)
+
+  const migrateAll = db.transaction(() => {
+    for (const est of estimates) {
+      // Create customer view
+      const customerViewId = uuidv4()
+      insertView.run(
+        customerViewId,
+        est.id,
+        'Заказчик',
+        est.customer_link_token,
+        null,
+        0
+      )
+
+      // Create master view
+      const masterViewId = uuidv4()
+      insertView.run(
+        masterViewId,
+        est.id,
+        'Мастер',
+        est.master_link_token,
+        est.master_password || null,
+        1
+      )
+
+      // Migrate sections
+      const sections = db.prepare('SELECT * FROM estimate_sections WHERE estimate_id = ?').all(est.id) as any[]
+      for (const section of sections) {
+        insertViewSectionSetting.run(uuidv4(), customerViewId, section.id, section.show_customer)
+        insertViewSectionSetting.run(uuidv4(), masterViewId, section.id, section.show_master)
+      }
+
+      // Migrate items
+      const items = db.prepare('SELECT * FROM estimate_items WHERE estimate_id = ?').all(est.id) as any[]
+      for (const item of items) {
+        insertViewItemSetting.run(uuidv4(), customerViewId, item.id, item.customer_price, item.customer_total, item.show_customer)
+        insertViewItemSetting.run(uuidv4(), masterViewId, item.id, item.master_price, item.master_total, item.show_master)
+      }
+    }
+  })
+
+  migrateAll()
+  console.log(`[Migration] Done. Created ${estimateCount * 2} views.`)
 }
 
 // Create tables before preparing statements
 createTables()
+migrateToViews()
 
 export function initDatabase() {
   console.log('✅ Database initialized')
@@ -219,8 +385,6 @@ export const userQueries: Record<string, Statement> = {
 export const estimateQueries: Record<string, Statement> = {
   findByBrigadirId: db.prepare('SELECT * FROM estimates WHERE brigadir_id = ? ORDER BY created_at DESC'),
   findById: db.prepare('SELECT * FROM estimates WHERE id = ?'),
-  findByCustomerToken: db.prepare('SELECT * FROM estimates WHERE customer_link_token = ?'),
-  findByMasterToken: db.prepare('SELECT * FROM estimates WHERE master_link_token = ?'),
   create: db.prepare(`
     INSERT INTO estimates (id, brigadir_id, google_sheet_id, title, customer_link_token, master_link_token, column_mapping)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -228,31 +392,28 @@ export const estimateQueries: Record<string, Statement> = {
   update: db.prepare(`
     UPDATE estimates SET google_sheet_id = ?, title = ? WHERE id = ? AND brigadir_id = ?
   `),
-  updateMasterPassword: db.prepare(`
-    UPDATE estimates SET master_password = ? WHERE id = ? AND brigadir_id = ?
-  `),
   updateLastSynced: db.prepare(`
     UPDATE estimates SET last_synced_at = datetime('now') WHERE id = ?
   `),
   delete: db.prepare('DELETE FROM estimates WHERE id = ? AND brigadir_id = ?'),
 }
 
-// Section queries
+// Section queries (no more show_customer/show_master in create/update)
 export const sectionQueries: Record<string, Statement> = {
   findByEstimateId: db.prepare('SELECT * FROM estimate_sections WHERE estimate_id = ? ORDER BY sort_order'),
   findById: db.prepare('SELECT * FROM estimate_sections WHERE id = ?'),
   create: db.prepare(`
-    INSERT INTO estimate_sections (id, estimate_id, name, sort_order, show_customer, show_master)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO estimate_sections (id, estimate_id, name, sort_order)
+    VALUES (?, ?, ?, ?)
   `),
   update: db.prepare(`
-    UPDATE estimate_sections SET name = ?, show_customer = ?, show_master = ? WHERE id = ?
+    UPDATE estimate_sections SET name = ? WHERE id = ?
   `),
   delete: db.prepare('DELETE FROM estimate_sections WHERE id = ?'),
   deleteByEstimateId: db.prepare('DELETE FROM estimate_sections WHERE estimate_id = ?'),
 }
 
-// Item queries
+// Item queries (no more customer/master price columns in create/update)
 export const itemQueries: Record<string, Statement> = {
   findByEstimateId: db.prepare(`
     SELECT * FROM estimate_items WHERE estimate_id = ? ORDER BY sort_order
@@ -262,23 +423,61 @@ export const itemQueries: Record<string, Statement> = {
   `),
   findById: db.prepare('SELECT * FROM estimate_items WHERE id = ?'),
   create: db.prepare(`
-    INSERT INTO estimate_items (id, estimate_id, section_id, number, name, unit, quantity, 
-      customer_price, customer_total, master_price, master_total, sort_order, show_customer, show_master)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO estimate_items (id, estimate_id, section_id, number, name, unit, quantity, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `),
   update: db.prepare(`
-    UPDATE estimate_items SET 
-      name = ?, unit = ?, quantity = ?, 
-      customer_price = ?, customer_total = ?, 
-      master_price = ?, master_total = ?,
-      show_customer = ?, show_master = ?
-    WHERE id = ?
+    UPDATE estimate_items SET name = ?, unit = ?, quantity = ? WHERE id = ?
   `),
   delete: db.prepare('DELETE FROM estimate_items WHERE id = ?'),
   deleteByEstimateId: db.prepare('DELETE FROM estimate_items WHERE estimate_id = ?'),
 }
 
-// Version queries
+// ========== VIEW QUERIES ==========
+
+export const viewQueries: Record<string, Statement> = {
+  findByEstimateId: db.prepare('SELECT * FROM estimate_views WHERE estimate_id = ? ORDER BY sort_order'),
+  findById: db.prepare('SELECT * FROM estimate_views WHERE id = ?'),
+  findByLinkToken: db.prepare('SELECT * FROM estimate_views WHERE link_token = ?'),
+  create: db.prepare(`
+    INSERT INTO estimate_views (id, estimate_id, name, link_token, password, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `),
+  update: db.prepare(`
+    UPDATE estimate_views SET name = ?, password = ? WHERE id = ?
+  `),
+  delete: db.prepare('DELETE FROM estimate_views WHERE id = ?'),
+  deleteByEstimateId: db.prepare('DELETE FROM estimate_views WHERE estimate_id = ?'),
+  getMaxSortOrder: db.prepare('SELECT COALESCE(MAX(sort_order), 0) as max_order FROM estimate_views WHERE estimate_id = ?'),
+}
+
+export const viewSectionSettingsQueries: Record<string, Statement> = {
+  findByViewId: db.prepare('SELECT * FROM view_section_settings WHERE view_id = ?'),
+  findByViewAndSection: db.prepare('SELECT * FROM view_section_settings WHERE view_id = ? AND section_id = ?'),
+  upsert: db.prepare(`
+    INSERT INTO view_section_settings (id, view_id, section_id, visible)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(view_id, section_id) DO UPDATE SET visible = excluded.visible
+  `),
+  deleteByViewId: db.prepare('DELETE FROM view_section_settings WHERE view_id = ?'),
+  deleteBySectionId: db.prepare('DELETE FROM view_section_settings WHERE section_id = ?'),
+}
+
+export const viewItemSettingsQueries: Record<string, Statement> = {
+  findByViewId: db.prepare('SELECT * FROM view_item_settings WHERE view_id = ?'),
+  findByViewAndItem: db.prepare('SELECT * FROM view_item_settings WHERE view_id = ? AND item_id = ?'),
+  findByItemId: db.prepare('SELECT * FROM view_item_settings WHERE item_id = ?'),
+  upsert: db.prepare(`
+    INSERT INTO view_item_settings (id, view_id, item_id, price, total, visible)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(view_id, item_id) DO UPDATE SET price = excluded.price, total = excluded.total, visible = excluded.visible
+  `),
+  deleteByViewId: db.prepare('DELETE FROM view_item_settings WHERE view_id = ?'),
+  deleteByItemId: db.prepare('DELETE FROM view_item_settings WHERE item_id = ?'),
+}
+
+// ========== VERSION QUERIES ==========
+
 export const versionQueries: Record<string, Statement> = {
   findByEstimateId: db.prepare(`
     SELECT * FROM estimate_versions WHERE estimate_id = ? ORDER BY version_number DESC
@@ -294,13 +493,61 @@ export const versionQueries: Record<string, Statement> = {
   delete: db.prepare('DELETE FROM estimate_versions WHERE id = ?'),
 }
 
-// Version section queries
 export const versionSectionQueries: Record<string, Statement> = {
   findByVersionId: db.prepare(`
     SELECT * FROM estimate_version_sections WHERE version_id = ? ORDER BY sort_order
   `),
   create: db.prepare(`
-    INSERT INTO estimate_version_sections (id, version_id, original_section_id, name, sort_order, show_customer, show_master)
+    INSERT INTO estimate_version_sections (id, version_id, original_section_id, name, sort_order)
+    VALUES (?, ?, ?, ?, ?)
+  `),
+}
+
+export const versionItemQueries: Record<string, Statement> = {
+  findByVersionId: db.prepare(`
+    SELECT * FROM estimate_version_items WHERE version_id = ? ORDER BY sort_order
+  `),
+  findByVersionSectionId: db.prepare(`
+    SELECT * FROM estimate_version_items WHERE version_section_id = ? ORDER BY sort_order
+  `),
+  create: db.prepare(`
+    INSERT INTO estimate_version_items (id, version_id, version_section_id, original_item_id, number, name, unit, quantity, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `),
+}
+
+export const versionViewQueries: Record<string, Statement> = {
+  findByVersionId: db.prepare(`
+    SELECT * FROM estimate_version_views WHERE version_id = ? ORDER BY sort_order
+  `),
+  create: db.prepare(`
+    INSERT INTO estimate_version_views (id, version_id, original_view_id, name, sort_order)
+    VALUES (?, ?, ?, ?, ?)
+  `),
+}
+
+export const versionViewSectionSettingsQueries: Record<string, Statement> = {
+  findByVersionId: db.prepare(`
+    SELECT * FROM version_view_section_settings WHERE version_id = ?
+  `),
+  findByVersionViewId: db.prepare(`
+    SELECT * FROM version_view_section_settings WHERE version_view_id = ?
+  `),
+  create: db.prepare(`
+    INSERT INTO version_view_section_settings (id, version_id, version_view_id, version_section_id, visible)
+    VALUES (?, ?, ?, ?, ?)
+  `),
+}
+
+export const versionViewItemSettingsQueries: Record<string, Statement> = {
+  findByVersionId: db.prepare(`
+    SELECT * FROM version_view_item_settings WHERE version_id = ?
+  `),
+  findByVersionViewId: db.prepare(`
+    SELECT * FROM version_view_item_settings WHERE version_view_id = ?
+  `),
+  create: db.prepare(`
+    INSERT INTO version_view_item_settings (id, version_id, version_view_id, version_item_id, price, total, visible)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `),
 }
@@ -334,19 +581,4 @@ export const materialQueries: Record<string, Statement> = {
   delete: db.prepare('DELETE FROM estimate_materials WHERE id = ?'),
   deleteByEstimateId: db.prepare('DELETE FROM estimate_materials WHERE estimate_id = ?'),
   getMaxSortOrder: db.prepare('SELECT COALESCE(MAX(sort_order), 0) as max_order FROM estimate_materials WHERE estimate_id = ?'),
-}
-
-// Version item queries
-export const versionItemQueries: Record<string, Statement> = {
-  findByVersionId: db.prepare(`
-    SELECT * FROM estimate_version_items WHERE version_id = ? ORDER BY sort_order
-  `),
-  findByVersionSectionId: db.prepare(`
-    SELECT * FROM estimate_version_items WHERE version_section_id = ? ORDER BY sort_order
-  `),
-  create: db.prepare(`
-    INSERT INTO estimate_version_items (id, version_id, version_section_id, original_item_id, number, name, unit, quantity, 
-      customer_price, customer_total, master_price, master_total, sort_order, show_customer, show_master)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `),
 }

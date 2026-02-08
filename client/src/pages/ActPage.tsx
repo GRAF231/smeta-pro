@@ -78,6 +78,7 @@ export default function ActPage() {
     <ActGenerator
       projectId={id!}
       sections={project.sections}
+      views={project.views}
       onBack={() => navigate(`/projects/${id}/edit`)}
     />
   )

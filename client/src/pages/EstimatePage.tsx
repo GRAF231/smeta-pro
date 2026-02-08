@@ -18,8 +18,11 @@ export default function EstimatePage() {
   const [isSyncing, setIsSyncing] = useState(false)
   const [error, setError] = useState('')
   const [editingItem, setEditingItem] = useState<string | null>(null)
-  const [editingData, setEditingData] = useState<Partial<EstimateItem>>({})
+  const [editingData, setEditingData] = useState<{ name?: string; unit?: string; quantity?: number; price?: number }>({})
   const [newItemSection, setNewItemSection] = useState<string | null>(null)
+  
+  // Active view tab
+  const [activeViewId, setActiveViewId] = useState<string | null>(null)
   
   // Add section state
   const [showAddSection, setShowAddSection] = useState(false)
@@ -29,6 +32,10 @@ export default function EstimatePage() {
   // Edit section name state
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null)
   const [editingSectionName, setEditingSectionName] = useState('')
+
+  // Add view state
+  const [showAddView, setShowAddView] = useState(false)
+  const [newViewName, setNewViewName] = useState('')
 
   // Version control state
   const [showVersionModal, setShowVersionModal] = useState(false)
@@ -47,6 +54,10 @@ export default function EstimatePage() {
     try {
       const res = await projectsApi.getOne(projectId)
       setProject(res.data)
+      // Set active view to first if not set
+      if (!activeViewId && res.data.views.length > 0) {
+        setActiveViewId(res.data.views[0].id)
+      }
     } catch {
       setError('Ошибка загрузки проекта')
     } finally {
@@ -67,17 +78,57 @@ export default function EstimatePage() {
     }
   }
 
+  // Get active view
+  const activeView = project?.views.find(v => v.id === activeViewId) || null
+
+  // === View handlers ===
+
+  const handleAddView = async () => {
+    if (!id || !project || !newViewName.trim()) return
+    try {
+      const res = await projectsApi.createView(id, newViewName.trim())
+      const updatedProject = { ...project, views: [...project.views, res.data] }
+      setProject(updatedProject)
+      setActiveViewId(res.data.id)
+      setNewViewName('')
+      setShowAddView(false)
+      // Reload to get full data with new view settings
+      await loadProject(id)
+    } catch {
+      setError('Ошибка создания представления')
+    }
+  }
+
+  const handleDeleteView = async (viewId: string) => {
+    if (!id || !project) return
+    const view = project.views.find(v => v.id === viewId)
+    if (!view) return
+    if (project.views.length <= 1) {
+      setError('Нельзя удалить последнее представление')
+      return
+    }
+    if (!confirm(`Удалить представление "${view.name}"?`)) return
+    try {
+      await projectsApi.deleteView(id, viewId)
+      const remaining = project.views.filter(v => v.id !== viewId)
+      setProject({ ...project, views: remaining })
+      if (activeViewId === viewId) {
+        setActiveViewId(remaining[0]?.id || null)
+      }
+    } catch {
+      setError('Ошибка удаления представления')
+    }
+  }
+
   // === Section handlers ===
 
   const handleAddSection = async () => {
     if (!id || !project || !newSectionName.trim()) return
     setIsAddingSection(true)
     try {
-      const res = await projectsApi.addSection(id, newSectionName.trim())
-      setProject({
-        ...project,
-        sections: [...project.sections, res.data],
-      })
+      await projectsApi.addSection(id, newSectionName.trim())
+      // Reload project to get section with view settings
+      await loadProject(id)
       setNewSectionName('')
       setShowAddSection(false)
     } catch {
@@ -104,11 +155,7 @@ export default function EstimatePage() {
   const handleRenameSectionSave = async (section: EstimateSection) => {
     if (!id || !project || !editingSectionName.trim()) return
     try {
-      await projectsApi.updateSection(id, section.id, {
-        name: editingSectionName.trim(),
-        showCustomer: section.showCustomer,
-        showMaster: section.showMaster,
-      })
+      await projectsApi.updateSection(id, section.id, { name: editingSectionName.trim() })
       setProject({
         ...project,
         sections: project.sections.map(s =>
@@ -122,20 +169,21 @@ export default function EstimatePage() {
     }
   }
 
-  const handleSectionVisibilityChange = async (section: EstimateSection, field: 'showCustomer' | 'showMaster') => {
-    if (!id || !project) return
+  const handleSectionVisibilityChange = async (sectionId: string, currentVisible: boolean) => {
+    if (!id || !project || !activeViewId) return
     try {
-      const newValue = !section[field]
-      await projectsApi.updateSection(id, section.id, {
-        name: section.name,
-        showCustomer: field === 'showCustomer' ? newValue : section.showCustomer,
-        showMaster: field === 'showMaster' ? newValue : section.showMaster,
-      })
-      
+      const newVisible = !currentVisible
+      await projectsApi.updateViewSectionSetting(id, activeViewId, sectionId, { visible: newVisible })
       setProject({
         ...project,
         sections: project.sections.map(s => 
-          s.id === section.id ? { ...s, [field]: newValue } : s
+          s.id === sectionId ? { 
+            ...s, 
+            viewSettings: { 
+              ...s.viewSettings, 
+              [activeViewId]: { visible: newVisible } 
+            } 
+          } : s
         ),
       })
     } catch {
@@ -145,20 +193,22 @@ export default function EstimatePage() {
 
   // === Item handlers ===
 
-  const handleItemVisibilityChange = async (sectionId: string, item: EstimateItem, field: 'showCustomer' | 'showMaster') => {
-    if (!id || !project) return
+  const handleItemVisibilityChange = async (sectionId: string, item: EstimateItem) => {
+    if (!id || !project || !activeViewId) return
     try {
-      const newValue = !item[field]
-      await projectsApi.updateItem(id, item.id, {
-        ...item,
-        [field]: newValue,
-      })
-      
+      const currentVisible = item.viewSettings[activeViewId]?.visible ?? true
+      const res = await projectsApi.updateViewItemSetting(id, activeViewId, item.id, { visible: !currentVisible })
       setProject({
         ...project,
         sections: project.sections.map(s => 
           s.id === sectionId 
-            ? { ...s, items: s.items.map(i => i.id === item.id ? { ...i, [field]: newValue } : i) }
+            ? { ...s, items: s.items.map(i => i.id === item.id ? { 
+                ...i, 
+                viewSettings: { 
+                  ...i.viewSettings, 
+                  [activeViewId]: res.data 
+                } 
+              } : i) }
             : s
         ),
       })
@@ -173,8 +223,7 @@ export default function EstimatePage() {
       name: item.name,
       unit: item.unit,
       quantity: item.quantity,
-      customerPrice: item.customerPrice,
-      masterPrice: item.masterPrice,
+      price: activeViewId ? (item.viewSettings[activeViewId]?.price ?? 0) : 0,
     })
   }
 
@@ -184,22 +233,43 @@ export default function EstimatePage() {
   }
 
   const saveEditing = async (sectionId: string, item: EstimateItem) => {
-    if (!id || !project) return
+    if (!id || !project || !activeViewId) return
     try {
-      const updatedItem = {
-        ...item,
-        ...editingData,
-        customerTotal: (editingData.quantity || item.quantity) * (editingData.customerPrice || item.customerPrice),
-        masterTotal: (editingData.quantity || item.quantity) * (editingData.masterPrice || item.masterPrice),
+      const newName = editingData.name ?? item.name
+      const newUnit = editingData.unit ?? item.unit
+      const newQty = editingData.quantity ?? item.quantity
+      const newPrice = editingData.price ?? (item.viewSettings[activeViewId]?.price ?? 0)
+
+      // Update shared item fields
+      await projectsApi.updateItem(id, item.id, { name: newName, unit: newUnit, quantity: newQty })
+      
+      // Update per-view price
+      const viewRes = await projectsApi.updateViewItemSetting(id, activeViewId, item.id, { price: newPrice })
+
+      // Also recalculate totals for other views (quantity changed)
+      const updatedViewSettings = { ...item.viewSettings, [activeViewId]: viewRes.data }
+      
+      // For other views, recalculate total based on new quantity
+      if (newQty !== item.quantity) {
+        for (const viewId of Object.keys(item.viewSettings)) {
+          if (viewId !== activeViewId) {
+            const vs = item.viewSettings[viewId]
+            updatedViewSettings[viewId] = { ...vs, total: newQty * vs.price }
+          }
+        }
       }
-      
-      await projectsApi.updateItem(id, item.id, updatedItem)
-      
+
       setProject({
         ...project,
         sections: project.sections.map(s => 
           s.id === sectionId 
-            ? { ...s, items: s.items.map(i => i.id === item.id ? updatedItem : i) }
+            ? { ...s, items: s.items.map(i => i.id === item.id ? {
+                ...i,
+                name: newName,
+                unit: newUnit,
+                quantity: newQty,
+                viewSettings: updatedViewSettings,
+              } : i) }
             : s
         ),
       })
@@ -229,18 +299,12 @@ export default function EstimatePage() {
     }
   }
 
-  const handleAddItem = async (sectionId: string, name: string, unit: string, quantity: number, customerPrice: number, masterPrice: number) => {
+  const handleAddItem = async (sectionId: string, name: string, unit: string, quantity: number) => {
     if (!id || !project) return
     try {
-      const res = await projectsApi.addItem(id, { sectionId, name, unit, quantity, customerPrice, masterPrice })
-      setProject({
-        ...project,
-        sections: project.sections.map(s => 
-          s.id === sectionId 
-            ? { ...s, items: [...s.items, res.data] }
-            : s
-        ),
-      })
+      await projectsApi.addItem(id, { sectionId, name, unit, quantity })
+      // Reload to get full item with view settings
+      await loadProject(id)
       setNewItemSection(null)
     } catch {
       setError('Ошибка добавления')
@@ -299,6 +363,7 @@ export default function EstimatePage() {
     setIsRestoringVersion(true)
     try {
       await projectsApi.restoreVersion(id, selectedVersion.id)
+      setActiveViewId(null) // will be reset on load
       await loadProject(id)
       setShowVersionModal(false)
       setSelectedVersion(null)
@@ -312,23 +377,25 @@ export default function EstimatePage() {
   const formatNumber = (num: number) => new Intl.NumberFormat('ru-RU').format(num)
 
   const calculateTotals = () => {
-    let customerTotal = 0
-    let masterTotal = 0
+    const totals: Record<string, number> = {}
+    if (!project) return totals
     
-    project?.sections.forEach(section => {
-      if (section.showCustomer) {
-        section.items.forEach(item => {
-          if (item.showCustomer) customerTotal += item.customerTotal
-        })
-      }
-      if (section.showMaster) {
-        section.items.forEach(item => {
-          if (item.showMaster) masterTotal += item.masterTotal
-        })
-      }
-    })
-    
-    return { customerTotal, masterTotal }
+    for (const view of project.views) {
+      let viewTotal = 0
+      project.sections.forEach(section => {
+        const sectionVisible = section.viewSettings[view.id]?.visible ?? true
+        if (sectionVisible) {
+          section.items.forEach(item => {
+            const itemSettings = item.viewSettings[view.id]
+            if (itemSettings?.visible) {
+              viewTotal += itemSettings.total
+            }
+          })
+        }
+      })
+      totals[view.id] = viewTotal
+    }
+    return totals
   }
 
   if (isLoading) {
@@ -360,7 +427,7 @@ export default function EstimatePage() {
             </svg>
             Назад к проекту
           </button>
-          <h1 className="font-display text-2xl font-bold text-white">Смета: {project.title}</h1>
+          <h1 className="font-display text-2xl font-bold text-white">{project.title}</h1>
           {project.lastSyncedAt && (
             <p className="text-sm text-slate-500 mt-1">
               Синхронизировано: {new Date(project.lastSyncedAt).toLocaleString('ru-RU')}
@@ -386,7 +453,7 @@ export default function EstimatePage() {
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            История версий
+            Версии
           </button>
           {project.googleSheetId && (
             <button
@@ -410,27 +477,86 @@ export default function EstimatePage() {
         </div>
       )}
 
-      {/* Totals summary */}
-      <div className="grid md:grid-cols-2 gap-4 mb-8">
-        <div className="card bg-gradient-to-r from-primary-500/20 to-primary-600/10 border-primary-500/30">
-          <p className="text-sm text-slate-400 mb-1">Итого для заказчика</p>
-          <p className="font-display text-2xl font-bold text-primary-400">{formatNumber(totals.customerTotal)} ₽</p>
+      {/* View Tabs */}
+      <div className="mb-6">
+        <div className="flex items-center gap-1 overflow-x-auto pb-2">
+          {project.views.map(view => (
+            <div key={view.id} className="flex items-center group">
+              <button
+                onClick={() => setActiveViewId(view.id)}
+                className={`px-4 py-2.5 rounded-t-xl text-sm font-medium whitespace-nowrap transition-all ${
+                  activeViewId === view.id
+                    ? 'bg-slate-700/60 text-white border border-b-0 border-slate-600/50'
+                    : 'bg-slate-800/40 text-slate-400 hover:text-white hover:bg-slate-700/30 border border-transparent'
+                }`}
+              >
+                {view.name}
+                <span className="ml-2 text-xs opacity-60">
+                  {formatNumber(totals[view.id] || 0)} ₽
+                </span>
+              </button>
+              {activeViewId === view.id && project.views.length > 1 && (
+                <button
+                  onClick={() => handleDeleteView(view.id)}
+                  className="ml-0.5 p-1 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Удалить"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          ))}
+          {showAddView ? (
+            <div className="flex items-center gap-1 ml-1">
+              <input
+                type="text"
+                value={newViewName}
+                onChange={(e) => setNewViewName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleAddView()
+                  if (e.key === 'Escape') { setShowAddView(false); setNewViewName('') }
+                }}
+                placeholder="Название..."
+                className="input-field py-1.5 px-3 text-sm w-40"
+                autoFocus
+              />
+              <button onClick={handleAddView} disabled={!newViewName.trim()} className="p-1.5 text-green-400 hover:bg-green-500/20 rounded">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+              </button>
+              <button onClick={() => { setShowAddView(false); setNewViewName('') }} className="p-1.5 text-slate-400 hover:bg-slate-600/50 rounded">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowAddView(true)}
+              className="px-3 py-2.5 rounded-t-xl text-sm text-slate-500 hover:text-primary-400 hover:bg-slate-700/20 transition-all flex items-center gap-1"
+              title="Добавить представление"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+          )}
         </div>
-        <div className="card bg-gradient-to-r from-accent-500/20 to-accent-600/10 border-accent-500/30">
-          <p className="text-sm text-slate-400 mb-1">Итого для мастеров</p>
-          <p className="font-display text-2xl font-bold text-accent-400">{formatNumber(totals.masterTotal)} ₽</p>
-        </div>
+        <div className="border-b border-slate-700/50 -mt-px"></div>
       </div>
+
+      {/* Totals for active view */}
+      {activeView && (
+        <div className="card bg-gradient-to-r from-primary-500/20 to-primary-600/10 border-primary-500/30 mb-8">
+          <p className="text-sm text-slate-400 mb-1">Итого: {activeView.name}</p>
+          <p className="font-display text-2xl font-bold text-primary-400">{formatNumber(totals[activeView.id] || 0)} ₽</p>
+        </div>
+      )}
 
       {/* Legend */}
       <div className="card mb-6 flex flex-wrap gap-6 text-sm">
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded bg-primary-500/20 flex items-center justify-center text-primary-400 text-xs font-bold">З</div>
-          <span className="text-slate-400">Видно заказчику</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded bg-accent-500/20 flex items-center justify-center text-accent-400 text-xs font-bold">М</div>
-          <span className="text-slate-400">Видно мастерам</span>
+          <input type="checkbox" checked readOnly className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-primary-500" />
+          <span className="text-slate-400">Видно в «{activeView?.name || '...'}»</span>
         </div>
         <div className="flex items-center gap-2 ml-auto">
           <span className="text-slate-500">Кликните на строку для редактирования</span>
@@ -439,188 +565,161 @@ export default function EstimatePage() {
 
       {/* Sections */}
       <div className="space-y-6">
-        {project.sections.map(section => (
-          <div key={section.id} className="card overflow-hidden">
-            {/* Section header */}
-            <div className="flex items-center justify-between -mx-3 sm:-mx-6 -mt-3 sm:-mt-6 mb-3 sm:mb-4 px-3 sm:px-6 py-3 sm:py-4 bg-slate-700/30 border-b border-slate-700/50">
-              {editingSectionId === section.id ? (
-                <div className="flex items-center gap-2 flex-1 mr-3">
-                  <input
-                    type="text"
-                    value={editingSectionName}
-                    onChange={(e) => setEditingSectionName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleRenameSectionSave(section)
-                      if (e.key === 'Escape') { setEditingSectionId(null); setEditingSectionName('') }
-                    }}
-                    className="input-field py-1 px-2 text-lg font-semibold flex-1"
-                    autoFocus
-                  />
-                  <button
-                    onClick={() => handleRenameSectionSave(section)}
-                    className="p-1.5 text-green-400 hover:bg-green-500/20 rounded"
+        {project.sections.map(section => {
+          const sectionVisible = activeViewId ? (section.viewSettings[activeViewId]?.visible ?? true) : true
+
+          return (
+            <div key={section.id} className={`card overflow-hidden ${!sectionVisible ? 'opacity-50' : ''}`}>
+              {/* Section header */}
+              <div className="flex items-center justify-between -mx-3 sm:-mx-6 -mt-3 sm:-mt-6 mb-3 sm:mb-4 px-3 sm:px-6 py-3 sm:py-4 bg-slate-700/30 border-b border-slate-700/50">
+                {editingSectionId === section.id ? (
+                  <div className="flex items-center gap-2 flex-1 mr-3">
+                    <input
+                      type="text"
+                      value={editingSectionName}
+                      onChange={(e) => setEditingSectionName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleRenameSectionSave(section)
+                        if (e.key === 'Escape') { setEditingSectionId(null); setEditingSectionName('') }
+                      }}
+                      className="input-field py-1 px-2 text-lg font-semibold flex-1"
+                      autoFocus
+                    />
+                    <button onClick={() => handleRenameSectionSave(section)} className="p-1.5 text-green-400 hover:bg-green-500/20 rounded">
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    </button>
+                    <button onClick={() => { setEditingSectionId(null); setEditingSectionName('') }} className="p-1.5 text-slate-400 hover:bg-slate-600/50 rounded">
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                ) : (
+                  <h2
+                    className="font-display font-semibold text-lg text-white cursor-pointer hover:text-primary-300 transition-colors"
+                    onClick={() => { setEditingSectionId(section.id); setEditingSectionName(section.name) }}
+                    title="Нажмите для переименования"
                   >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  </button>
+                    {section.name}
+                  </h2>
+                )}
+                <div className="flex items-center gap-2">
+                  {activeViewId && (
+                    <button
+                      onClick={() => handleSectionVisibilityChange(section.id, sectionVisible)}
+                      className={`px-3 py-1.5 rounded text-xs font-medium transition-all ${
+                        sectionVisible 
+                          ? 'bg-primary-500/30 text-primary-400 border border-primary-500/50' 
+                          : 'bg-slate-700/50 text-slate-500 border border-slate-600/50'
+                      }`}
+                      title={`${sectionVisible ? 'Скрыть' : 'Показать'} в "${activeView?.name}"`}
+                    >
+                      {sectionVisible ? 'Видно' : 'Скрыто'}
+                    </button>
+                  )}
                   <button
-                    onClick={() => { setEditingSectionId(null); setEditingSectionName('') }}
-                    className="p-1.5 text-slate-400 hover:bg-slate-600/50 rounded"
+                    onClick={() => handleDeleteSection(section.id, section.name)}
+                    className="w-8 h-8 rounded flex items-center justify-center text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                    title="Удалить раздел"
                   >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                     </svg>
                   </button>
                 </div>
-              ) : (
-                <h2
-                  className="font-display font-semibold text-lg text-white cursor-pointer hover:text-primary-300 transition-colors"
-                  onClick={() => { setEditingSectionId(section.id); setEditingSectionName(section.name) }}
-                  title="Нажмите для переименования"
-                >
-                  {section.name}
-                </h2>
-              )}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handleSectionVisibilityChange(section, 'showCustomer')}
-                  className={`w-8 h-8 rounded flex items-center justify-center text-xs font-bold transition-all ${
-                    section.showCustomer 
-                      ? 'bg-primary-500/30 text-primary-400 border border-primary-500/50' 
-                      : 'bg-slate-700/50 text-slate-500 border border-slate-600/50'
-                  }`}
-                  title="Показать заказчику"
-                >
-                  З
-                </button>
-                <button
-                  onClick={() => handleSectionVisibilityChange(section, 'showMaster')}
-                  className={`w-8 h-8 rounded flex items-center justify-center text-xs font-bold transition-all ${
-                    section.showMaster 
-                      ? 'bg-accent-500/30 text-accent-400 border border-accent-500/50' 
-                      : 'bg-slate-700/50 text-slate-500 border border-slate-600/50'
-                  }`}
-                  title="Показать мастерам"
-                >
-                  М
-                </button>
-                <button
-                  onClick={() => handleDeleteSection(section.id, section.name)}
-                  className="w-8 h-8 rounded flex items-center justify-center text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all"
-                  title="Удалить раздел"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
               </div>
-            </div>
 
-            {/* Items table */}
-            <div className="overflow-x-auto -mx-3 sm:-mx-6">
-              <table className="w-full min-w-[900px] text-xs sm:text-sm">
-                <thead>
-                  <tr className="text-left text-slate-400 border-b border-slate-700/50">
-                    <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-8 sm:w-10">З</th>
-                    <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-8 sm:w-10">М</th>
-                    <th className="px-1.5 sm:px-3 py-1.5 sm:py-2">Наименование</th>
-                    <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-14 sm:w-20">Ед.</th>
-                    <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-16 sm:w-24 text-right">Кол-во</th>
-                    <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-20 sm:w-28 text-right">Цена З</th>
-                    <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-24 sm:w-32 text-right">Сумма З</th>
-                    <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-20 sm:w-28 text-right">Цена М</th>
-                    <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-24 sm:w-32 text-right">Сумма М</th>
-                    <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-16 sm:w-24"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {section.items.map(item => (
-                    editingItem === item.id ? (
-                      <tr key={item.id} className="bg-slate-700/40 border-b border-slate-600/50">
-                        <td className="px-3 py-2">
-                          <input type="checkbox" checked={item.showCustomer} onChange={() => handleItemVisibilityChange(section.id, item, 'showCustomer')} className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-primary-500" />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input type="checkbox" checked={item.showMaster} onChange={() => handleItemVisibilityChange(section.id, item, 'showMaster')} className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-accent-500" />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input type="text" value={editingData.name ?? item.name} onChange={(e) => setEditingData({ ...editingData, name: e.target.value })} className="input-field py-1 px-2 text-sm w-full" autoFocus />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input type="text" value={editingData.unit ?? item.unit} onChange={(e) => setEditingData({ ...editingData, unit: e.target.value })} className="input-field py-1 px-2 text-sm w-full" />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input type="number" step="0.1" value={editingData.quantity ?? item.quantity} onChange={(e) => setEditingData({ ...editingData, quantity: parseFloat(e.target.value) || 0 })} className="input-field py-1 px-2 text-sm w-full text-right" />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input type="number" value={editingData.customerPrice ?? item.customerPrice} onChange={(e) => setEditingData({ ...editingData, customerPrice: parseFloat(e.target.value) || 0 })} className="input-field py-1 px-2 text-sm w-full text-right" />
-                        </td>
-                        <td className="px-3 py-2 text-right text-primary-300 font-medium">
-                          {formatNumber((editingData.quantity ?? item.quantity) * (editingData.customerPrice ?? item.customerPrice))}
-                        </td>
-                        <td className="px-3 py-2">
-                          <input type="number" value={editingData.masterPrice ?? item.masterPrice} onChange={(e) => setEditingData({ ...editingData, masterPrice: parseFloat(e.target.value) || 0 })} className="input-field py-1 px-2 text-sm w-full text-right" />
-                        </td>
-                        <td className="px-3 py-2 text-right text-accent-300 font-medium">
-                          {formatNumber((editingData.quantity ?? item.quantity) * (editingData.masterPrice ?? item.masterPrice))}
-                        </td>
-                        <td className="px-3 py-2">
-                          <div className="flex gap-1 justify-end">
-                            <button onClick={() => saveEditing(section.id, item)} className="p-1.5 text-green-400 hover:bg-green-500/20 rounded" title="Сохранить">
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+              {/* Items table */}
+              <div className="overflow-x-auto -mx-3 sm:-mx-6">
+                <table className="w-full min-w-[700px] text-xs sm:text-sm">
+                  <thead>
+                    <tr className="text-left text-slate-400 border-b border-slate-700/50">
+                      <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-10">Вкл</th>
+                      <th className="px-1.5 sm:px-3 py-1.5 sm:py-2">Наименование</th>
+                      <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-14 sm:w-20">Ед.</th>
+                      <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-16 sm:w-24 text-right">Кол-во</th>
+                      <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-20 sm:w-28 text-right">Цена</th>
+                      <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-24 sm:w-32 text-right">Сумма</th>
+                      <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-16 sm:w-24"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {section.items.map(item => {
+                      const vs = activeViewId ? item.viewSettings[activeViewId] : null
+                      const itemVisible = vs?.visible ?? true
+                      const itemPrice = vs?.price ?? 0
+                      const itemTotal = vs?.total ?? 0
+
+                      return editingItem === item.id ? (
+                        <tr key={item.id} className="bg-slate-700/40 border-b border-slate-600/50">
+                          <td className="px-3 py-2">
+                            <input type="checkbox" checked={itemVisible} onChange={() => handleItemVisibilityChange(section.id, item)} className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-primary-500" />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input type="text" value={editingData.name ?? item.name} onChange={(e) => setEditingData({ ...editingData, name: e.target.value })} className="input-field py-1 px-2 text-sm w-full" autoFocus />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input type="text" value={editingData.unit ?? item.unit} onChange={(e) => setEditingData({ ...editingData, unit: e.target.value })} className="input-field py-1 px-2 text-sm w-full" />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input type="number" step="0.1" value={editingData.quantity ?? item.quantity} onChange={(e) => setEditingData({ ...editingData, quantity: parseFloat(e.target.value) || 0 })} className="input-field py-1 px-2 text-sm w-full text-right" />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input type="number" value={editingData.price ?? itemPrice} onChange={(e) => setEditingData({ ...editingData, price: parseFloat(e.target.value) || 0 })} className="input-field py-1 px-2 text-sm w-full text-right" />
+                          </td>
+                          <td className="px-3 py-2 text-right text-primary-300 font-medium">
+                            {formatNumber((editingData.quantity ?? item.quantity) * (editingData.price ?? itemPrice))}
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex gap-1 justify-end">
+                              <button onClick={() => saveEditing(section.id, item)} className="p-1.5 text-green-400 hover:bg-green-500/20 rounded" title="Сохранить">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                              </button>
+                              <button onClick={cancelEditing} className="p-1.5 text-slate-400 hover:bg-slate-600/50 rounded" title="Отмена">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : (
+                        <tr key={item.id} className={`border-b border-slate-700/30 hover:bg-slate-700/20 cursor-pointer transition-colors ${!itemVisible ? 'opacity-40' : ''}`} onClick={() => startEditing(item)}>
+                          <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                            <input type="checkbox" checked={itemVisible} onChange={() => handleItemVisibilityChange(section.id, item)} className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-primary-500 focus:ring-primary-500" />
+                          </td>
+                          <td className="px-3 py-2 text-slate-200">{item.name}</td>
+                          <td className="px-3 py-2 text-slate-400">{item.unit}</td>
+                          <td className="px-3 py-2 text-right text-slate-300">{item.quantity}</td>
+                          <td className="px-3 py-2 text-right text-primary-400">{formatNumber(itemPrice)}</td>
+                          <td className="px-3 py-2 text-right font-medium text-primary-300">{formatNumber(itemTotal)}</td>
+                          <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                            <button onClick={() => handleDeleteItem(section.id, item.id)} className="p-1.5 text-slate-500 hover:text-red-400 transition-colors" title="Удалить">
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                             </button>
-                            <button onClick={cancelEditing} className="p-1.5 text-slate-400 hover:bg-slate-600/50 rounded" title="Отмена">
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                    
+                    {/* Add new item row */}
+                    {newItemSection === section.id ? (
+                      <NewItemRow
+                        onSave={(name, unit, qty) => handleAddItem(section.id, name, unit, qty)}
+                        onCancel={() => setNewItemSection(null)}
+                      />
                     ) : (
-                      <tr key={item.id} className="border-b border-slate-700/30 hover:bg-slate-700/20 cursor-pointer transition-colors" onClick={() => startEditing(item)}>
-                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                          <input type="checkbox" checked={item.showCustomer} onChange={() => handleItemVisibilityChange(section.id, item, 'showCustomer')} className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-primary-500 focus:ring-primary-500" />
-                        </td>
-                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                          <input type="checkbox" checked={item.showMaster} onChange={() => handleItemVisibilityChange(section.id, item, 'showMaster')} className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-accent-500 focus:ring-accent-500" />
-                        </td>
-                        <td className="px-3 py-2 text-slate-200">{item.name}</td>
-                        <td className="px-3 py-2 text-slate-400">{item.unit}</td>
-                        <td className="px-3 py-2 text-right text-slate-300">{item.quantity}</td>
-                        <td className="px-3 py-2 text-right text-primary-400">{formatNumber(item.customerPrice)}</td>
-                        <td className="px-3 py-2 text-right font-medium text-primary-300">{formatNumber(item.customerTotal)}</td>
-                        <td className="px-3 py-2 text-right text-accent-400">{formatNumber(item.masterPrice)}</td>
-                        <td className="px-3 py-2 text-right font-medium text-accent-300">{formatNumber(item.masterTotal)}</td>
-                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                          <button onClick={() => handleDeleteItem(section.id, item.id)} className="p-1.5 text-slate-500 hover:text-red-400 transition-colors" title="Удалить">
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      <tr>
+                        <td colSpan={7} className="px-3 py-2">
+                          <button onClick={() => setNewItemSection(section.id)} className="text-sm text-slate-500 hover:text-primary-400 flex items-center gap-1">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                            Добавить позицию
                           </button>
                         </td>
                       </tr>
-                    )
-                  ))}
-                  
-                  {/* Add new item row */}
-                  {newItemSection === section.id ? (
-                    <NewItemRow
-                      onSave={(name, unit, qty, cp, mp) => handleAddItem(section.id, name, unit, qty, cp, mp)}
-                      onCancel={() => setNewItemSection(null)}
-                    />
-                  ) : (
-                    <tr>
-                      <td colSpan={10} className="px-3 py-2">
-                        <button onClick={() => setNewItemSection(section.id)} className="text-sm text-slate-500 hover:text-primary-400 flex items-center gap-1">
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                          Добавить позицию
-                        </button>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
 
         {/* Add Section Button */}
         {showAddSection ? (
@@ -639,17 +738,10 @@ export default function EstimatePage() {
                 className="input-field flex-1"
                 autoFocus
               />
-              <button
-                onClick={handleAddSection}
-                disabled={isAddingSection || !newSectionName.trim()}
-                className="btn-primary whitespace-nowrap"
-              >
+              <button onClick={handleAddSection} disabled={isAddingSection || !newSectionName.trim()} className="btn-primary whitespace-nowrap">
                 {isAddingSection ? 'Добавление...' : 'Добавить'}
               </button>
-              <button
-                onClick={() => { setShowAddSection(false); setNewSectionName('') }}
-                className="btn-secondary"
-              >
+              <button onClick={() => { setShowAddSection(false); setNewSectionName('') }} className="btn-secondary">
                 Отмена
               </button>
             </div>
@@ -695,7 +787,7 @@ export default function EstimatePage() {
                     </button>
                     <button onClick={handleRestoreVersion} disabled={isRestoringVersion} className="btn-primary flex items-center gap-2">
                       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                      {isRestoringVersion ? 'Восстановление...' : 'Восстановить эту версию'}
+                      {isRestoringVersion ? 'Восстановление...' : 'Восстановить'}
                     </button>
                   </div>
 
@@ -704,6 +796,13 @@ export default function EstimatePage() {
                       <div><span className="text-slate-400">Название:</span><span className="ml-2 text-white">{selectedVersion.name || '—'}</span></div>
                       <div><span className="text-slate-400">Создана:</span><span className="ml-2 text-white">{new Date(selectedVersion.createdAt).toLocaleString('ru-RU')}</span></div>
                     </div>
+                    {selectedVersion.views && selectedVersion.views.length > 0 && (
+                      <div className="mt-3 flex gap-2 flex-wrap">
+                        {selectedVersion.views.map(v => (
+                          <span key={v.id} className="px-2 py-1 bg-slate-600/50 rounded text-xs text-slate-300">{v.name}</span>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-4">
@@ -717,8 +816,6 @@ export default function EstimatePage() {
                                 <th className="px-4 py-2">Наименование</th>
                                 <th className="px-4 py-2 w-16">Ед.</th>
                                 <th className="px-4 py-2 w-20 text-right">Кол-во</th>
-                                <th className="px-4 py-2 w-28 text-right">Цена З</th>
-                                <th className="px-4 py-2 w-28 text-right">Цена М</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -727,8 +824,6 @@ export default function EstimatePage() {
                                   <td className="px-4 py-2 text-slate-200">{item.name}</td>
                                   <td className="px-4 py-2 text-slate-400">{item.unit}</td>
                                   <td className="px-4 py-2 text-right text-slate-300">{item.quantity}</td>
-                                  <td className="px-4 py-2 text-right text-primary-400">{formatNumber(item.customerPrice)}</td>
-                                  <td className="px-4 py-2 text-right text-accent-400">{formatNumber(item.masterPrice)}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -758,7 +853,7 @@ export default function EstimatePage() {
                       <div className="text-center py-8 text-slate-400">
                         <svg className="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                         <p>Версий пока нет</p>
-                        <p className="text-sm mt-1">Сохраните первую версию, чтобы иметь возможность откатиться к ней позже</p>
+                        <p className="text-sm mt-1">Сохраните первую версию</p>
                       </div>
                     ) : (
                       <div className="space-y-2">
@@ -788,23 +883,19 @@ export default function EstimatePage() {
 }
 
 // Component for adding new item
-function NewItemRow({ onSave, onCancel }: { onSave: (name: string, unit: string, qty: number, cp: number, mp: number) => void; onCancel: () => void }) {
+function NewItemRow({ onSave, onCancel }: { onSave: (name: string, unit: string, qty: number) => void; onCancel: () => void }) {
   const [name, setName] = useState('')
   const [unit, setUnit] = useState('')
   const [quantity, setQuantity] = useState(0)
-  const [customerPrice, setCustomerPrice] = useState(0)
-  const [masterPrice, setMasterPrice] = useState(0)
 
   const handleSubmit = () => {
     if (!name.trim()) return
-    onSave(name, unit, quantity, customerPrice, masterPrice)
+    onSave(name, unit, quantity)
   }
-
-  const formatNumber = (num: number) => new Intl.NumberFormat('ru-RU').format(num)
 
   return (
     <tr className="bg-slate-700/30">
-      <td className="px-3 py-2" colSpan={2}></td>
+      <td className="px-3 py-2"></td>
       <td className="px-3 py-2">
         <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Название работы" className="input-field py-1 px-2 text-sm w-full" autoFocus />
       </td>
@@ -814,14 +905,8 @@ function NewItemRow({ onSave, onCancel }: { onSave: (name: string, unit: string,
       <td className="px-3 py-2">
         <input type="number" step="0.1" value={quantity || ''} onChange={(e) => setQuantity(parseFloat(e.target.value) || 0)} placeholder="0" className="input-field py-1 px-2 text-sm w-full text-right" />
       </td>
-      <td className="px-3 py-2">
-        <input type="number" value={customerPrice || ''} onChange={(e) => setCustomerPrice(parseFloat(e.target.value) || 0)} placeholder="0" className="input-field py-1 px-2 text-sm w-full text-right" />
-      </td>
-      <td className="px-3 py-2 text-right text-primary-300">{formatNumber(quantity * customerPrice)}</td>
-      <td className="px-3 py-2">
-        <input type="number" value={masterPrice || ''} onChange={(e) => setMasterPrice(parseFloat(e.target.value) || 0)} placeholder="0" className="input-field py-1 px-2 text-sm w-full text-right" />
-      </td>
-      <td className="px-3 py-2 text-right text-accent-300">{formatNumber(quantity * masterPrice)}</td>
+      <td className="px-3 py-2 text-right text-slate-500">—</td>
+      <td className="px-3 py-2 text-right text-slate-500">—</td>
       <td className="px-3 py-2">
         <div className="flex gap-1 justify-end">
           <button onClick={handleSubmit} className="p-1.5 text-green-400 hover:bg-green-500/20 rounded" title="Добавить">
@@ -835,4 +920,3 @@ function NewItemRow({ onSave, onCancel }: { onSave: (name: string, unit: string,
     </tr>
   )
 }
-

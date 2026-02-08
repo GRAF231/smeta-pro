@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
-import { EstimateSection, projectsApi } from '../services/api'
+import { EstimateSection, EstimateView, projectsApi } from '../services/api'
 import { amountToWordsRu } from '../utils/numberToWords'
 
 interface ActGeneratorProps {
   projectId: string
   sections: EstimateSection[]
+  views: EstimateView[]
   onBack: () => void
 }
 
@@ -46,8 +47,11 @@ const IMAGE_LABELS: Record<ImageType, string> = {
   signature: 'Подпись',
 }
 
-export default function ActGenerator({ projectId, sections, onBack }: ActGeneratorProps) {
+export default function ActGenerator({ projectId, sections, views, onBack }: ActGeneratorProps) {
   const [step, setStep] = useState<'config' | 'preview'>('config')
+
+  // Selected view for pricing
+  const [selectedViewId, setSelectedViewId] = useState<string>(views[0]?.id || '')
 
   // Act config
   const [actNumber, setActNumber] = useState('')
@@ -70,6 +74,17 @@ export default function ActGenerator({ projectId, sections, onBack }: ActGenerat
   // PDF
   const actRef = useRef<HTMLDivElement>(null)
   const [isGenerating, setIsGenerating] = useState(false)
+
+  // Helper: get item price/total for selected view
+  const getItemPrice = (item: { viewSettings: Record<string, { price: number; total: number; visible: boolean }> }) => {
+    const vs = item.viewSettings[selectedViewId]
+    return vs?.price ?? 0
+  }
+
+  const getItemTotal = (item: { viewSettings: Record<string, { price: number; total: number; visible: boolean }> }) => {
+    const vs = item.viewSettings[selectedViewId]
+    return vs?.total ?? 0
+  }
 
   // Load saved config from localStorage
   useEffect(() => {
@@ -212,7 +227,7 @@ export default function ActGenerator({ projectId, sections, onBack }: ActGenerat
         if (!selectedSections.has(section.id)) return
 
         const selectedSectionItems = section.items.filter(item => selectedItems.has(item.id))
-        const sectionTotal = selectedSectionItems.reduce((sum, item) => sum + item.customerTotal, 0)
+        const sectionTotal = selectedSectionItems.reduce((sum, item) => sum + getItemTotal(item), 0)
 
         if (sectionTotal > 0) {
           lines.push({
@@ -235,8 +250,8 @@ export default function ActGenerator({ projectId, sections, onBack }: ActGenerat
             name: item.name,
             quantity: item.quantity,
             unit: item.unit || '-',
-            price: item.customerPrice,
-            total: item.customerTotal,
+            price: getItemPrice(item),
+            total: getItemTotal(item),
           })
         })
       })
@@ -410,6 +425,39 @@ export default function ActGenerator({ projectId, sections, onBack }: ActGenerat
       <div>
           {step === 'config' ? (
             <div className="space-y-6">
+
+              {/* View selector for pricing */}
+              {views.length > 1 && (
+                <div className="card">
+                  <h3 className="font-semibold text-white mb-3 flex items-center gap-2">
+                    <div className="w-6 h-6 rounded bg-primary-500/20 flex items-center justify-center text-primary-400 text-xs">
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    </div>
+                    Цены из представления
+                  </h3>
+                  <div className="flex flex-wrap gap-2">
+                    {views.map(view => (
+                      <button
+                        key={view.id}
+                        onClick={() => setSelectedViewId(view.id)}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                          selectedViewId === view.id
+                            ? 'bg-primary-500/20 text-primary-400 border border-primary-500/50'
+                            : 'bg-slate-700/50 text-slate-400 border border-slate-600/50 hover:bg-slate-700'
+                        }`}
+                      >
+                        {view.name}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-2">
+                    Выберите, цены из какого представления использовать для расчёта акта
+                  </p>
+                </div>
+              )}
 
               {/* Images Upload */}
               <div className="card space-y-4">
@@ -626,7 +674,7 @@ export default function ActGenerator({ projectId, sections, onBack }: ActGenerat
                                 className="w-3.5 h-3.5 rounded border-slate-600 bg-slate-700 text-primary-500 focus:ring-primary-500"
                               />
                               <span className="text-sm text-slate-300 flex-1">{item.name}</span>
-                              <span className="text-xs text-slate-500">{formatMoney(item.customerTotal)} ₽</span>
+                              <span className="text-xs text-slate-500">{formatMoney(getItemTotal(item))} ₽</span>
                             </div>
                           ))}
                         </div>

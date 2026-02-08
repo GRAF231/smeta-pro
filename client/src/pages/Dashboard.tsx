@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { projectsApi, Project } from '../services/api'
+import { projectsApi, Project, EstimateView } from '../services/api'
 
 export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([])
@@ -34,16 +34,13 @@ export default function Dashboard() {
     }
   }
 
-  const copyLink = async (token: string, type: 'customer' | 'master') => {
-    const path = type === 'customer' ? '/c/' : '/m/'
-    const url = `${window.location.origin}${path}${token}`
+  const copyViewLink = async (view: EstimateView) => {
+    const url = `${window.location.origin}/v/${view.linkToken}`
     
     try {
-      // Try modern clipboard API first
       if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(url)
       } else {
-        // Fallback for HTTP
         const textArea = document.createElement('textarea')
         textArea.value = url
         textArea.style.position = 'fixed'
@@ -53,11 +50,10 @@ export default function Dashboard() {
         document.execCommand('copy')
         document.body.removeChild(textArea)
       }
-      setCopiedLink(`${type}-${token}`)
+      setCopiedLink(view.id)
       setTimeout(() => setCopiedLink(null), 2000)
     } catch (err) {
       console.error('Failed to copy:', err)
-      // Show URL in prompt as last resort
       prompt('Скопируйте ссылку:', url)
     }
   }
@@ -129,52 +125,43 @@ export default function Dashboard() {
                   <h2 className="text-xl font-semibold text-white mb-1">{project.title}</h2>
                   <p className="text-sm text-slate-500">
                     Создан: {new Date(project.createdAt).toLocaleDateString('ru-RU')}
+                    {project.views && project.views.length > 0 && (
+                      <span className="ml-2 text-slate-600">
+                        • {project.views.length} {project.views.length === 1 ? 'представление' : project.views.length < 5 ? 'представления' : 'представлений'}
+                      </span>
+                    )}
                   </p>
                 </div>
 
                 <div className="flex flex-wrap gap-3">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => copyLink(project.customerLinkToken, 'customer')}
-                      className="btn-secondary text-sm py-2 px-4"
-                    >
-                      {copiedLink === `customer-${project.customerLinkToken}` ? (
-                        <span className="flex items-center gap-1.5 text-green-400">
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                          Скопировано
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1.5">
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                          </svg>
-                          Для заказчика
-                        </span>
-                      )}
-                    </button>
-
-                    <button
-                      onClick={() => copyLink(project.masterLinkToken, 'master')}
-                      className="btn-secondary text-sm py-2 px-4"
-                    >
-                      {copiedLink === `master-${project.masterLinkToken}` ? (
-                        <span className="flex items-center gap-1.5 text-green-400">
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                          Скопировано
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1.5">
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
-                          </svg>
-                          Для мастеров
-                        </span>
-                      )}
-                    </button>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {project.views && project.views.slice(0, 3).map(view => (
+                      <button
+                        key={view.id}
+                        onClick={() => copyViewLink(view)}
+                        className="btn-secondary text-sm py-2 px-3"
+                        title={`Скопировать ссылку: ${view.name}`}
+                      >
+                        {copiedLink === view.id ? (
+                          <span className="flex items-center gap-1.5 text-green-400">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            Скопировано
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1.5">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                            </svg>
+                            {view.name}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                    {project.views && project.views.length > 3 && (
+                      <span className="text-xs text-slate-500 self-center">+{project.views.length - 3}</span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2">

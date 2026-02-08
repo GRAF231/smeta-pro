@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate, useParams } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
 import Layout from './components/Layout'
 import Home from './pages/Home'
@@ -10,10 +10,20 @@ import ProjectEditor from './pages/ProjectEditor'
 import EstimatePage from './pages/EstimatePage'
 import ActPage from './pages/ActPage'
 import AiEstimateGenerator from './pages/AiEstimateGenerator'
-import CustomerView from './pages/CustomerView'
-import MasterView from './pages/MasterView'
+import PublicView from './pages/PublicView'
 import MaterialsPage from './pages/MaterialsPage'
 import ProtectedRoute from './components/ProtectedRoute'
+
+// Legacy redirect components for backward compatibility
+function LegacyCustomerRedirect() {
+  const { token } = useParams<{ token: string }>()
+  return <Navigate to={`/v/${token}`} replace />
+}
+
+function LegacyMasterRedirect() {
+  const { token } = useParams<{ token: string }>()
+  return <Navigate to={`/v/${token}`} replace />
+}
 
 function App() {
   const { isLoading } = useAuth()
@@ -89,9 +99,11 @@ function App() {
           }
         />
       </Route>
-      {/* Public estimate views */}
-      <Route path="/c/:token" element={<CustomerView />} />
-      <Route path="/m/:token" element={<MasterView />} />
+      {/* Universal public view */}
+      <Route path="/v/:token" element={<PublicView />} />
+      {/* Legacy backward compatibility redirects */}
+      <Route path="/c/:token" element={<LegacyCustomerRedirect />} />
+      <Route path="/m/:token" element={<LegacyMasterRedirect />} />
     </Routes>
   )
 }

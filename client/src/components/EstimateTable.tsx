@@ -3,7 +3,9 @@ import { EstimateData } from '../services/api'
 
 interface EstimateTableProps {
   data: EstimateData
-  variant: 'customer' | 'master'
+  viewName?: string
+  /** @deprecated use viewName instead */
+  variant?: 'customer' | 'master'
 }
 
 interface ZoomState {
@@ -12,10 +14,9 @@ interface ZoomState {
   baseScale: number
 }
 
-function PinchZoomSection({ children, sectionName, variant, sectionIdx }: {
+function PinchZoomSection({ children, sectionName, sectionIdx }: {
   children: React.ReactNode
   sectionName: string
-  variant: 'customer' | 'master'
   sectionIdx: number
 }) {
   const [zoom, setZoom] = useState<ZoomState>({ scale: 1, initialDistance: null, baseScale: 1 })
@@ -57,11 +58,7 @@ function PinchZoomSection({ children, sectionName, variant, sectionIdx }: {
       style={{ animationDelay: `${sectionIdx * 50}ms` }}
     >
       {/* Section header */}
-      <div className={`px-3 sm:px-6 py-3 sm:py-4 bg-gradient-to-r flex items-center justify-between ${
-        variant === 'customer'
-          ? 'from-primary-500/10 to-primary-600/5 border-b border-primary-500/20'
-          : 'from-accent-500/10 to-accent-600/5 border-b border-accent-500/20'
-      }`}>
+      <div className="px-3 sm:px-6 py-3 sm:py-4 bg-gradient-to-r from-primary-500/10 to-primary-600/5 border-b border-primary-500/20 flex items-center justify-between">
         <h2 className="font-display font-semibold text-base sm:text-lg text-white">
           {sectionName}
         </h2>
@@ -102,10 +99,14 @@ function PinchZoomSection({ children, sectionName, variant, sectionIdx }: {
   )
 }
 
-export default function EstimateTable({ data, variant }: EstimateTableProps) {
+export default function EstimateTable({ data, viewName, variant }: EstimateTableProps) {
   const formatNumber = (num: number) => {
     return new Intl.NumberFormat('ru-RU').format(num)
   }
+
+  // Use viewName if available, fallback to variant-based label
+  const label = viewName || (variant === 'master' ? 'Для мастеров' : 'Для заказчика')
+  void label // used in print header if needed
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -113,7 +114,6 @@ export default function EstimateTable({ data, variant }: EstimateTableProps) {
         <PinchZoomSection
           key={section.name}
           sectionName={section.name}
-          variant={variant}
           sectionIdx={sectionIdx}
         >
           <table className="w-full text-xs sm:text-sm">
@@ -145,17 +145,11 @@ export default function EstimateTable({ data, variant }: EstimateTableProps) {
               ))}
             </tbody>
             <tfoot>
-              <tr className={`${
-                variant === 'customer'
-                  ? 'bg-primary-500/10'
-                  : 'bg-accent-500/10'
-              }`}>
+              <tr className="bg-primary-500/10">
                 <td colSpan={5} className="px-1.5 sm:px-4 py-2.5 sm:py-4 text-right font-semibold text-slate-300 text-xs sm:text-sm">
                   Итого по разделу:
                 </td>
-                <td className={`px-1.5 sm:px-4 py-2.5 sm:py-4 text-right font-bold text-sm sm:text-lg whitespace-nowrap ${
-                  variant === 'customer' ? 'text-primary-400' : 'text-accent-400'
-                }`}>
+                <td className="px-1.5 sm:px-4 py-2.5 sm:py-4 text-right font-bold text-sm sm:text-lg whitespace-nowrap text-primary-400">
                   {formatNumber(section.subtotal)} ₽
                 </td>
               </tr>
@@ -165,27 +159,17 @@ export default function EstimateTable({ data, variant }: EstimateTableProps) {
       ))}
 
       {/* Grand total */}
-      <div className={`card animate-fade-in bg-gradient-to-r ${
-        variant === 'customer'
-          ? 'from-primary-500/20 to-primary-600/10 border-primary-500/30'
-          : 'from-accent-500/20 to-accent-600/10 border-accent-500/30'
-      }`}>
+      <div className="card animate-fade-in bg-gradient-to-r from-primary-500/20 to-primary-600/10 border-primary-500/30">
         <div className="flex justify-between items-center">
           <div>
-            <p className="text-slate-400 text-xs sm:text-sm mb-1">
-              {variant === 'customer' ? 'Итого стоимость работ' : 'Итого к выплате'}
-            </p>
+            <p className="text-slate-400 text-xs sm:text-sm mb-1">Итого стоимость работ</p>
             <h3 className="font-display text-2xl sm:text-3xl font-bold text-white">
               {formatNumber(data.total)} ₽
             </h3>
           </div>
-          <div className={`w-12 h-12 sm:w-16 sm:h-16 rounded-2xl flex items-center justify-center ${
-            variant === 'customer'
-              ? 'bg-primary-500/20'
-              : 'bg-accent-500/20'
-          }`}>
+          <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl flex items-center justify-center bg-primary-500/20">
             <svg
-              className={`w-6 h-6 sm:w-8 sm:h-8 ${variant === 'customer' ? 'text-primary-400' : 'text-accent-400'}`}
+              className="w-6 h-6 sm:w-8 sm:h-8 text-primary-400"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"

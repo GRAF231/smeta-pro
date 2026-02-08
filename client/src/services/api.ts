@@ -22,17 +22,24 @@ api.interceptors.response.use(
   }
 )
 
-// ========== Project (formerly Estimate) ==========
+// ========== Types ==========
 
-export interface Project {
+export interface EstimateView {
   id: string
-  title: string
-  googleSheetId: string  // может быть пустой строкой если проект без таблицы
-  customerLinkToken: string
-  masterLinkToken: string
-  masterPassword?: string
-  lastSyncedAt?: string
-  createdAt: string
+  name: string
+  linkToken: string
+  password: string
+  sortOrder: number
+}
+
+export interface ViewItemSettings {
+  price: number
+  total: number
+  visible: boolean
+}
+
+export interface ViewSectionSettings {
+  visible: boolean
 }
 
 export interface EstimateItem {
@@ -41,22 +48,25 @@ export interface EstimateItem {
   name: string
   unit: string
   quantity: number
-  customerPrice: number
-  customerTotal: number
-  masterPrice: number
-  masterTotal: number
   sortOrder: number
-  showCustomer: boolean
-  showMaster: boolean
+  viewSettings: Record<string, ViewItemSettings>  // viewId -> settings
 }
 
 export interface EstimateSection {
   id: string
   name: string
   sortOrder: number
-  showCustomer: boolean
-  showMaster: boolean
+  viewSettings: Record<string, ViewSectionSettings>  // viewId -> settings
   items: EstimateItem[]
+}
+
+export interface Project {
+  id: string
+  title: string
+  googleSheetId: string
+  lastSyncedAt?: string
+  createdAt: string
+  views: EstimateView[]
 }
 
 export interface ProjectWithEstimate extends Project {
@@ -70,24 +80,33 @@ export interface EstimateVersion {
   createdAt: string
 }
 
+export interface EstimateVersionView {
+  id: string
+  name: string
+  sortOrder: number
+}
+
 export interface EstimateVersionWithSections extends EstimateVersion {
+  views: EstimateVersionView[]
   sections: EstimateSection[]
 }
 
+// Public view types
 export interface EstimateData {
   title: string
-  sections: Section[]
+  viewName?: string
+  sections: PublicSection[]
   total: number
   requiresPassword?: boolean
 }
 
-export interface Section {
+export interface PublicSection {
   name: string
-  items: ViewItem[]
+  items: PublicViewItem[]
   subtotal: number
 }
 
-export interface ViewItem {
+export interface PublicViewItem {
   number: string
   name: string
   unit: string
@@ -96,14 +115,18 @@ export interface ViewItem {
   total: number
 }
 
+// Keep old Section/ViewItem for compatibility
+export type Section = PublicSection
+export type ViewItem = PublicViewItem
+
 // Projects API
 export const projectsApi = {
   getAll: () => api.get<Project[]>('/projects'),
   getOne: (id: string) => api.get<ProjectWithEstimate>(`/projects/${id}`),
   create: (data: { title: string; googleSheetUrl?: string }) => 
-    api.post<Project>('/projects', data),
+    api.post<ProjectWithEstimate>('/projects', data),
   update: (id: string, data: { title: string; googleSheetUrl?: string }) => 
-    api.put<Project>(`/projects/${id}`, data),
+    api.put<ProjectWithEstimate>(`/projects/${id}`, data),
   delete: (id: string) => api.delete(`/projects/${id}`),
   
   // Sync with Google Sheets
@@ -111,31 +134,50 @@ export const projectsApi = {
   
   // Sections
   addSection: (projectId: string, name: string) => 
-    api.post<EstimateSection>(`/projects/${projectId}/sections`, { name }),
-  updateSection: (projectId: string, sectionId: string, data: { name: string; showCustomer: boolean; showMaster: boolean }) =>
+    api.post<{ id: string; name: string; items: EstimateItem[] }>(`/projects/${projectId}/sections`, { name }),
+  updateSection: (projectId: string, sectionId: string, data: { name: string }) =>
     api.put(`/projects/${projectId}/sections/${sectionId}`, data),
   deleteSection: (projectId: string, sectionId: string) =>
     api.delete(`/projects/${projectId}/sections/${sectionId}`),
   
   // Items
-  addItem: (projectId: string, data: { sectionId: string; name: string; unit: string; quantity: number; customerPrice: number; masterPrice: number }) =>
-    api.post<EstimateItem>(`/projects/${projectId}/items`, data),
-  updateItem: (projectId: string, itemId: string, data: Partial<EstimateItem>) =>
+  addItem: (projectId: string, data: { sectionId: string; name: string; unit: string; quantity: number }) =>
+    api.post<{ id: string; name: string; unit: string; quantity: number; sortOrder: number }>(`/projects/${projectId}/items`, data),
+  updateItem: (projectId: string, itemId: string, data: { name: string; unit: string; quantity: number }) =>
     api.put(`/projects/${projectId}/items/${itemId}`, data),
   deleteItem: (projectId: string, itemId: string) =>
     api.delete(`/projects/${projectId}/items/${itemId}`),
+
+  // Views
+  getViews: (projectId: string) =>
+    api.get<EstimateView[]>(`/projects/${projectId}/views`),
+  createView: (projectId: string, name: string) =>
+    api.post<EstimateView>(`/projects/${projectId}/views`, { name }),
+  updateView: (projectId: string, viewId: string, data: { name?: string; password?: string }) =>
+    api.put<EstimateView>(`/projects/${projectId}/views/${viewId}`, data),
+  duplicateView: (projectId: string, viewId: string) =>
+    api.post<EstimateView>(`/projects/${projectId}/views/${viewId}/duplicate`),
+  deleteView: (projectId: string, viewId: string) =>
+    api.delete(`/projects/${projectId}/views/${viewId}`),
+
+  // View section/item settings
+  updateViewSectionSetting: (projectId: string, viewId: string, sectionId: string, data: { visible: boolean }) =>
+    api.put(`/projects/${projectId}/views/${viewId}/sections/${sectionId}`, data),
+  updateViewItemSetting: (projectId: string, viewId: string, itemId: string, data: { price?: number; visible?: boolean }) =>
+    api.put<{ price: number; total: number; visible: boolean }>(`/projects/${projectId}/views/${viewId}/items/${itemId}`, data),
   
   // Public views
+  getPublicView: (token: string) => 
+    api.get<EstimateData>(`/projects/view/${token}`),
+  verifyPublicView: (token: string, password: string) =>
+    api.post<EstimateData>(`/projects/view/${token}/verify`, { password }),
+  // Legacy
   getCustomerView: (token: string) => 
     api.get<EstimateData>(`/projects/customer/${token}`),
   getMasterView: (token: string) => 
     api.get<EstimateData>(`/projects/master/${token}`),
   verifyMasterPassword: (token: string, password: string) =>
     api.post<EstimateData>(`/projects/master/${token}/verify`, { password }),
-  
-  // Master password
-  setMasterPassword: (projectId: string, password: string) =>
-    api.put<{ success: boolean; masterPassword: string }>(`/projects/${projectId}/master-password`, { password }),
   
   // Versions
   getVersions: (projectId: string) =>
@@ -159,9 +201,9 @@ export const projectsApi = {
 
   // AI Generation from PDF
   generateFromPdf: (formData: FormData) =>
-    api.post<Project>('/projects/generate', formData, {
+    api.post<ProjectWithEstimate>('/projects/generate', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 360000, // 6 minutes for large PDF AI generation
+      timeout: 360000,
     }),
 }
 
@@ -195,7 +237,7 @@ export const materialsApi = {
 
   parse: (projectId: string, urls: string[]) =>
     api.post<Material[]>(`/projects/${projectId}/materials/parse`, { urls }, {
-      timeout: 300000, // 5 minutes for AI parsing
+      timeout: 300000,
     }),
 
   update: (projectId: string, materialId: string, data: Partial<Material>) =>
