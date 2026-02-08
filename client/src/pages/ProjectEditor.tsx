@@ -222,7 +222,7 @@ export default function ProjectEditor() {
         </Link>
 
         <Link
-          to={`/projects/${id}/act`}
+          to={`/projects/${id}/acts`}
           className="card group hover:border-emerald-500/50 transition-all hover:shadow-lg hover:shadow-emerald-500/5"
         >
           <div className="flex items-center gap-3 mb-3">
@@ -232,8 +232,8 @@ export default function ProjectEditor() {
               </svg>
             </div>
             <div>
-              <h3 className="font-semibold text-white group-hover:text-emerald-300 transition-colors">Акт работ</h3>
-              <p className="text-xs text-slate-500">Генерация акта выполненных работ</p>
+              <h3 className="font-semibold text-white group-hover:text-emerald-300 transition-colors">Акты работ</h3>
+              <p className="text-xs text-slate-500">История и создание актов</p>
             </div>
           </div>
           <span className="text-sm text-slate-400">Открыть →</span>

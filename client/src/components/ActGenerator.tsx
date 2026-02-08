@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
-import { EstimateSection, EstimateView, projectsApi } from '../services/api'
+import { EstimateSection, EstimateView, UsedItemsMap, projectsApi } from '../services/api'
 import { amountToWordsRu } from '../utils/numberToWords'
 
 interface ActGeneratorProps {
@@ -71,6 +71,9 @@ export default function ActGenerator({ projectId, sections, views, onBack }: Act
   const [images, setImages] = useState<Record<string, string>>({})
   const [uploadingImage, setUploadingImage] = useState<string | null>(null)
 
+  // Used items from previous acts
+  const [usedItems, setUsedItems] = useState<UsedItemsMap>({})
+
   // PDF
   const actRef = useRef<HTMLDivElement>(null)
   const [isGenerating, setIsGenerating] = useState(false)
@@ -104,6 +107,7 @@ export default function ActGenerator({ projectId, sections, views, onBack }: Act
   // Load images from server
   useEffect(() => {
     loadImages()
+    loadUsedItems()
   }, [projectId])
 
   const loadImages = async () => {
@@ -112,6 +116,15 @@ export default function ActGenerator({ projectId, sections, views, onBack }: Act
       setImages(res.data)
     } catch {
       // Images may not exist yet, that's ok
+    }
+  }
+
+  const loadUsedItems = async () => {
+    try {
+      const res = await projectsApi.getUsedItems(projectId)
+      setUsedItems(res.data)
+    } catch {
+      // No acts yet, that's ok
     }
   }
 
@@ -357,6 +370,77 @@ export default function ActGenerator({ projectId, sections, views, onBack }: Act
       }
 
       pdf.save(`Акт_${actNumber || 'б-н'}_${actDate}.pdf`)
+
+      // Save act to database
+      try {
+        const actItemsToSave: { itemId?: string; sectionId?: string; name: string; unit: string; quantity: number; price: number; total: number }[] = []
+
+        if (selectionMode === 'sections') {
+          sections.forEach(section => {
+            if (!selectedSections.has(section.id)) return
+            const selectedSectionItems = section.items.filter(item => selectedItems.has(item.id))
+            const sectionTotal = selectedSectionItems.reduce((sum, item) => sum + getItemTotal(item), 0)
+            if (sectionTotal > 0) {
+              // Save section as a line, plus each item reference
+              actItemsToSave.push({
+                sectionId: section.id,
+                name: section.name,
+                unit: '-',
+                quantity: 1,
+                price: sectionTotal,
+                total: sectionTotal,
+              })
+              // Also save individual item references for used-items tracking
+              selectedSectionItems.forEach(item => {
+                actItemsToSave.push({
+                  itemId: item.id,
+                  sectionId: section.id,
+                  name: item.name,
+                  unit: item.unit || '-',
+                  quantity: item.quantity,
+                  price: getItemPrice(item),
+                  total: getItemTotal(item),
+                })
+              })
+            }
+          })
+        } else {
+          sections.forEach(section => {
+            section.items.forEach(item => {
+              if (!selectedItems.has(item.id)) return
+              actItemsToSave.push({
+                itemId: item.id,
+                sectionId: section.id,
+                name: item.name,
+                unit: item.unit || '-',
+                quantity: item.quantity,
+                price: getItemPrice(item),
+                total: getItemTotal(item),
+              })
+            })
+          })
+        }
+
+        await projectsApi.saveAct(projectId, {
+          viewId: selectedViewId,
+          actNumber,
+          actDate,
+          executorName,
+          executorDetails,
+          customerName,
+          directorName,
+          serviceName,
+          selectionMode,
+          grandTotal,
+          items: actItemsToSave,
+        })
+
+        // Refresh used items after saving
+        await loadUsedItems()
+      } catch (saveErr) {
+        console.error('Act save error:', saveErr)
+        // Don't alert — PDF was saved successfully, act save is secondary
+      }
     } catch (err) {
       console.error('PDF generation error:', err)
       alert('Ошибка при создании PDF. Попробуйте ещё раз.')
@@ -389,7 +473,7 @@ export default function ActGenerator({ projectId, sections, views, onBack }: Act
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
-            Назад к проекту
+            Назад к актам
           </button>
           <h1 className="font-display text-2xl font-bold text-white">
             {step === 'config' ? 'Создание акта выполненных работ' : 'Предпросмотр акта'}
@@ -639,7 +723,9 @@ export default function ActGenerator({ projectId, sections, views, onBack }: Act
 
                 {/* Sections / Items checkboxes */}
                 <div className="space-y-3 max-h-[400px] overflow-y-auto">
-                  {sections.map(section => (
+                  {sections.map(section => {
+                    const usedInSectionCount = section.items.filter(i => usedItems[i.id]?.length > 0).length
+                    return (
                     <div key={section.id} className="bg-slate-700/20 rounded-xl overflow-hidden">
                       <div
                         className="flex items-center gap-3 px-4 py-3 bg-slate-700/30 cursor-pointer hover:bg-slate-700/50 transition-colors"
@@ -653,17 +739,27 @@ export default function ActGenerator({ projectId, sections, views, onBack }: Act
                           className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-primary-500 focus:ring-primary-500"
                         />
                         <span className="font-medium text-white text-sm flex-1">{section.name}</span>
-                        <span className="text-xs text-slate-400">
-                          {section.items.filter(i => selectedItems.has(i.id)).length} / {section.items.length} поз.
-                        </span>
+                        <div className="flex items-center gap-2">
+                          {usedInSectionCount > 0 && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30" title={`${usedInSectionCount} из ${section.items.length} поз. уже были в актах`}>
+                              {usedInSectionCount} в актах
+                            </span>
+                          )}
+                          <span className="text-xs text-slate-400">
+                            {section.items.filter(i => selectedItems.has(i.id)).length} / {section.items.length} поз.
+                          </span>
+                        </div>
                       </div>
 
                       {selectionMode === 'items' && (
                         <div className="px-4 py-2 space-y-1">
-                          {section.items.map(item => (
+                          {section.items.map(item => {
+                            const itemUsage = usedItems[item.id]
+                            const isUsed = itemUsage && itemUsage.length > 0
+                            return (
                             <div
                               key={item.id}
-                              className="flex items-center gap-3 px-3 py-1.5 rounded hover:bg-slate-700/30 cursor-pointer transition-colors"
+                              className={`flex items-center gap-3 px-3 py-1.5 rounded hover:bg-slate-700/30 cursor-pointer transition-colors ${isUsed ? 'bg-amber-500/5' : ''}`}
                               onClick={() => toggleItem(section.id, item.id)}
                             >
                               <input
@@ -673,14 +769,26 @@ export default function ActGenerator({ projectId, sections, views, onBack }: Act
                                 onClick={e => e.stopPropagation()}
                                 className="w-3.5 h-3.5 rounded border-slate-600 bg-slate-700 text-primary-500 focus:ring-primary-500"
                               />
-                              <span className="text-sm text-slate-300 flex-1">{item.name}</span>
-                              <span className="text-xs text-slate-500">{formatMoney(getItemTotal(item))} ₽</span>
+                              <span className={`text-sm flex-1 ${isUsed ? 'text-amber-200' : 'text-slate-300'}`}>{item.name}</span>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                {isUsed && (
+                                  <span
+                                    className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 whitespace-nowrap"
+                                    title={itemUsage.map(u => `Акт №${u.actNumber} от ${u.actDate}`).join('\n')}
+                                  >
+                                    Акт {itemUsage.map(u => `№${u.actNumber}`).join(', ')}
+                                  </span>
+                                )}
+                                <span className="text-xs text-slate-500">{formatMoney(getItemTotal(item))} ₽</span>
+                              </div>
                             </div>
-                          ))}
+                            )
+                          })}
                         </div>
                       )}
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
 

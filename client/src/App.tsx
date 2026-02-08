@@ -9,6 +9,7 @@ import ProjectForm from './pages/ProjectForm'
 import ProjectEditor from './pages/ProjectEditor'
 import EstimatePage from './pages/EstimatePage'
 import ActPage from './pages/ActPage'
+import ActsPage from './pages/ActsPage'
 import AiEstimateGenerator from './pages/AiEstimateGenerator'
 import PublicView from './pages/PublicView'
 import MaterialsPage from './pages/MaterialsPage'
@@ -79,6 +80,14 @@ function App() {
           element={
             <ProtectedRoute>
               <EstimatePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="projects/:id/acts"
+          element={
+            <ProtectedRoute>
+              <ActsPage />
             </ProtectedRoute>
           }
         />

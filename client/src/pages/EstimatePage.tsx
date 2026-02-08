@@ -6,7 +6,7 @@ import {
   EstimateSection, 
   EstimateItem,
   EstimateVersion,
-  EstimateVersionWithSections
+  EstimateVersionWithSections,
 } from '../services/api'
 
 export default function EstimatePage() {
@@ -45,6 +45,7 @@ export default function EstimatePage() {
   const [newVersionName, setNewVersionName] = useState('')
   const [isLoadingVersions, setIsLoadingVersions] = useState(false)
   const [isRestoringVersion, setIsRestoringVersion] = useState(false)
+
 
   useEffect(() => {
     if (id) loadProject(id)
@@ -437,14 +438,13 @@ export default function EstimatePage() {
         
         <div className="flex gap-3 flex-wrap">
           <button
-            onClick={() => navigate(`/projects/${id}/act`)}
-            disabled={project.sections.length === 0}
+            onClick={() => navigate(`/projects/${id}/acts`)}
             className="btn-secondary flex items-center gap-2"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
-            Создать акт
+            Акты
           </button>
           <button
             onClick={handleOpenVersionModal}
@@ -878,6 +878,7 @@ export default function EstimatePage() {
           </div>
         </div>
       )}
+
     </div>
   )
 }

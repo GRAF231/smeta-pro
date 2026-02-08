@@ -119,6 +119,44 @@ export interface PublicViewItem {
 export type Section = PublicSection
 export type ViewItem = PublicViewItem
 
+// Saved acts types
+export interface SavedAct {
+  id: string
+  actNumber: string
+  actDate: string
+  executorName: string
+  customerName: string
+  selectionMode: string
+  grandTotal: number
+  createdAt: string
+}
+
+export interface SavedActDetail extends SavedAct {
+  executorDetails: string
+  directorName: string
+  serviceName: string
+  items: SavedActItem[]
+}
+
+export interface SavedActItem {
+  id: string
+  itemId: string | null
+  sectionId: string | null
+  name: string
+  unit: string
+  quantity: number
+  price: number
+  total: number
+}
+
+export interface UsedItemInfo {
+  actId: string
+  actNumber: string
+  actDate: string
+}
+
+export type UsedItemsMap = Record<string, UsedItemInfo[]>
+
 // Projects API
 export const projectsApi = {
   getAll: () => api.get<Project[]>('/projects'),
@@ -198,6 +236,31 @@ export const projectsApi = {
     api.post<{ success: boolean; imageType: string }>(`/projects/${projectId}/act-images`, { imageType, data }),
   deleteActImage: (projectId: string, imageType: 'logo' | 'stamp' | 'signature') =>
     api.delete(`/projects/${projectId}/act-images/${imageType}`),
+
+  // Saved Acts
+  getActs: (projectId: string) =>
+    api.get<SavedAct[]>(`/projects/${projectId}/acts`),
+  getAct: (projectId: string, actId: string) =>
+    api.get<SavedActDetail>(`/projects/${projectId}/acts/${actId}`),
+  saveAct: (projectId: string, data: {
+    viewId?: string
+    actNumber: string
+    actDate: string
+    executorName: string
+    executorDetails: string
+    customerName: string
+    directorName: string
+    serviceName: string
+    selectionMode: string
+    grandTotal: number
+    items: { itemId?: string; sectionId?: string; name: string; unit: string; quantity: number; price: number; total: number }[]
+  }) => api.post<{ id: string; actNumber: string; actDate: string; grandTotal: number; createdAt: string }>(
+    `/projects/${projectId}/acts`, data
+  ),
+  deleteAct: (projectId: string, actId: string) =>
+    api.delete(`/projects/${projectId}/acts/${actId}`),
+  getUsedItems: (projectId: string) =>
+    api.get<UsedItemsMap>(`/projects/${projectId}/acts/used-items`),
 
   // AI Generation from PDF
   generateFromPdf: (formData: FormData) =>

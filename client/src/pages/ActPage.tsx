@@ -51,11 +51,11 @@ export default function ActPage() {
   if (project.sections.length === 0) {
     return (
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <button onClick={() => navigate(`/projects/${id}/edit`)} className="text-slate-400 hover:text-white mb-4 flex items-center gap-1">
+        <button onClick={() => navigate(`/projects/${id}/acts`)} className="text-slate-400 hover:text-white mb-4 flex items-center gap-1">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
-          Назад к проекту
+          Назад к актам
         </button>
         <div className="card text-center py-12">
           <svg className="w-16 h-16 mx-auto mb-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -79,7 +79,7 @@ export default function ActPage() {
       projectId={id!}
       sections={project.sections}
       views={project.views}
-      onBack={() => navigate(`/projects/${id}/edit`)}
+      onBack={() => navigate(`/projects/${id}/acts`)}
     />
   )
 }

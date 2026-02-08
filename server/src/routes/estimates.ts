@@ -17,6 +17,8 @@ import {
   versionViewSectionSettingsQueries,
   versionViewItemSettingsQueries,
   actImageQueries,
+  savedActQueries,
+  savedActItemQueries,
   db 
 } from '../models/database'
 import { authMiddleware, AuthRequest } from '../middleware/auth'
@@ -1404,6 +1406,230 @@ router.delete('/:id/act-images/:imageType', authMiddleware, (req: AuthRequest, r
   } catch (error) {
     console.error('Delete act image error:', error)
     res.status(500).json({ error: 'Ошибка удаления изображения' })
+  }
+})
+
+// ========== SAVED ACTS ==========
+
+interface SavedActRow {
+  id: string
+  estimate_id: string
+  view_id: string | null
+  act_number: string
+  act_date: string
+  executor_name: string
+  executor_details: string
+  customer_name: string
+  director_name: string
+  service_name: string
+  selection_mode: string
+  grand_total: number
+  created_at: string
+}
+
+interface SavedActItemRow {
+  id: string
+  act_id: string
+  item_id: string | null
+  section_id: string | null
+  name: string
+  unit: string
+  quantity: number
+  price: number
+  total: number
+}
+
+// GET all acts for a project
+router.get('/:id/acts', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const estimate = estimateQueries.findById.get(req.params.id) as EstimateRow | undefined
+    if (!estimate || estimate.brigadir_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Смета не найдена' })
+    }
+
+    const acts = savedActQueries.findByEstimateId.all(estimate.id) as SavedActRow[]
+    res.json(acts.map(a => ({
+      id: a.id,
+      actNumber: a.act_number,
+      actDate: a.act_date,
+      executorName: a.executor_name,
+      customerName: a.customer_name,
+      selectionMode: a.selection_mode,
+      grandTotal: a.grand_total,
+      createdAt: a.created_at,
+    })))
+  } catch (error) {
+    console.error('Get acts error:', error)
+    res.status(500).json({ error: 'Ошибка получения актов' })
+  }
+})
+
+// GET used items mapping for a project
+router.get('/:id/acts/used-items', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const estimate = estimateQueries.findById.get(req.params.id) as EstimateRow | undefined
+    if (!estimate || estimate.brigadir_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Смета не найдена' })
+    }
+
+    const rows = savedActItemQueries.findByEstimateItemIds.all(estimate.id) as (SavedActItemRow & { act_number: string; act_date: string; act_id: string })[]
+
+    // Build mapping: itemId -> array of { actId, actNumber, actDate }
+    const usedItems: Record<string, { actId: string; actNumber: string; actDate: string }[]> = {}
+    for (const row of rows) {
+      if (!row.item_id) continue
+      if (!usedItems[row.item_id]) usedItems[row.item_id] = []
+      // Deduplicate by actId
+      if (!usedItems[row.item_id].some(a => a.actId === row.act_id)) {
+        usedItems[row.item_id].push({
+          actId: row.act_id,
+          actNumber: row.act_number,
+          actDate: row.act_date,
+        })
+      }
+    }
+
+    res.json(usedItems)
+  } catch (error) {
+    console.error('Get used items error:', error)
+    res.status(500).json({ error: 'Ошибка получения использованных позиций' })
+  }
+})
+
+// GET single act with items
+router.get('/:id/acts/:actId', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const estimate = estimateQueries.findById.get(req.params.id) as EstimateRow | undefined
+    if (!estimate || estimate.brigadir_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Смета не найдена' })
+    }
+
+    const act = savedActQueries.findById.get(req.params.actId) as SavedActRow | undefined
+    if (!act || act.estimate_id !== estimate.id) {
+      return res.status(404).json({ error: 'Акт не найден' })
+    }
+
+    const items = savedActItemQueries.findByActId.all(act.id) as SavedActItemRow[]
+
+    res.json({
+      id: act.id,
+      actNumber: act.act_number,
+      actDate: act.act_date,
+      executorName: act.executor_name,
+      executorDetails: act.executor_details,
+      customerName: act.customer_name,
+      directorName: act.director_name,
+      serviceName: act.service_name,
+      selectionMode: act.selection_mode,
+      grandTotal: act.grand_total,
+      createdAt: act.created_at,
+      items: items.map(i => ({
+        id: i.id,
+        itemId: i.item_id,
+        sectionId: i.section_id,
+        name: i.name,
+        unit: i.unit,
+        quantity: i.quantity,
+        price: i.price,
+        total: i.total,
+      })),
+    })
+  } catch (error) {
+    console.error('Get act error:', error)
+    res.status(500).json({ error: 'Ошибка получения акта' })
+  }
+})
+
+// POST create/save an act
+router.post('/:id/acts', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const estimate = estimateQueries.findById.get(req.params.id) as EstimateRow | undefined
+    if (!estimate || estimate.brigadir_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Смета не найдена' })
+    }
+
+    const {
+      viewId,
+      actNumber,
+      actDate,
+      executorName,
+      executorDetails,
+      customerName,
+      directorName,
+      serviceName,
+      selectionMode,
+      grandTotal,
+      items, // array of { itemId?, sectionId?, name, unit, quantity, price, total }
+    } = req.body
+
+    if (!actNumber) {
+      return res.status(400).json({ error: 'Номер акта обязателен' })
+    }
+
+    const actId = uuidv4()
+    savedActQueries.create.run(
+      actId,
+      estimate.id,
+      viewId || null,
+      actNumber,
+      actDate || new Date().toISOString().split('T')[0],
+      executorName || '',
+      executorDetails || '',
+      customerName || '',
+      directorName || '',
+      serviceName || '',
+      selectionMode || 'sections',
+      grandTotal || 0
+    )
+
+    // Save act items
+    if (Array.isArray(items)) {
+      for (const item of items) {
+        savedActItemQueries.create.run(
+          uuidv4(),
+          actId,
+          item.itemId || null,
+          item.sectionId || null,
+          item.name || '',
+          item.unit || '',
+          item.quantity || 0,
+          item.price || 0,
+          item.total || 0
+        )
+      }
+    }
+
+    res.status(201).json({
+      id: actId,
+      actNumber,
+      actDate: actDate || new Date().toISOString().split('T')[0],
+      grandTotal: grandTotal || 0,
+      createdAt: new Date().toISOString(),
+    })
+  } catch (error) {
+    console.error('Save act error:', error)
+    res.status(500).json({ error: 'Ошибка сохранения акта' })
+  }
+})
+
+// DELETE an act
+router.delete('/:id/acts/:actId', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const estimate = estimateQueries.findById.get(req.params.id) as EstimateRow | undefined
+    if (!estimate || estimate.brigadir_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Смета не найдена' })
+    }
+
+    const act = savedActQueries.findById.get(req.params.actId) as SavedActRow | undefined
+    if (!act || act.estimate_id !== estimate.id) {
+      return res.status(404).json({ error: 'Акт не найден' })
+    }
+
+    savedActQueries.delete.run(req.params.actId)
+    res.status(204).send()
+  } catch (error) {
+    console.error('Delete act error:', error)
+    res.status(500).json({ error: 'Ошибка удаления акта' })
   }
 })
 

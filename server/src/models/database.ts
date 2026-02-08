@@ -241,6 +241,44 @@ function createTables() {
     )
   `)
 
+  // ========== SAVED ACTS TABLES ==========
+
+  // Create saved_acts table -- stores act metadata
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS saved_acts (
+      id TEXT PRIMARY KEY,
+      estimate_id TEXT NOT NULL,
+      view_id TEXT,
+      act_number TEXT NOT NULL,
+      act_date TEXT NOT NULL,
+      executor_name TEXT DEFAULT '',
+      executor_details TEXT DEFAULT '',
+      customer_name TEXT DEFAULT '',
+      director_name TEXT DEFAULT '',
+      service_name TEXT DEFAULT '',
+      selection_mode TEXT DEFAULT 'sections' CHECK(selection_mode IN ('sections', 'items')),
+      grand_total REAL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (estimate_id) REFERENCES estimates(id) ON DELETE CASCADE
+    )
+  `)
+
+  // Create saved_act_items table -- items/sections snapshot included in each act
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS saved_act_items (
+      id TEXT PRIMARY KEY,
+      act_id TEXT NOT NULL,
+      item_id TEXT,
+      section_id TEXT,
+      name TEXT NOT NULL,
+      unit TEXT DEFAULT '',
+      quantity REAL DEFAULT 0,
+      price REAL DEFAULT 0,
+      total REAL DEFAULT 0,
+      FOREIGN KEY (act_id) REFERENCES saved_acts(id) ON DELETE CASCADE
+    )
+  `)
+
   // Create estimate_materials table
   db.exec(`
     CREATE TABLE IF NOT EXISTS estimate_materials (
@@ -292,6 +330,10 @@ function createTables() {
     CREATE INDEX IF NOT EXISTS idx_version_views_version ON estimate_version_views(version_id);
     CREATE INDEX IF NOT EXISTS idx_version_view_section_settings_version ON version_view_section_settings(version_id);
     CREATE INDEX IF NOT EXISTS idx_version_view_item_settings_version ON version_view_item_settings(version_id);
+    CREATE INDEX IF NOT EXISTS idx_saved_acts_estimate ON saved_acts(estimate_id);
+    CREATE INDEX IF NOT EXISTS idx_saved_act_items_act ON saved_act_items(act_id);
+    CREATE INDEX IF NOT EXISTS idx_saved_act_items_item ON saved_act_items(item_id);
+    CREATE INDEX IF NOT EXISTS idx_saved_act_items_section ON saved_act_items(section_id);
   `)
 }
 
@@ -562,6 +604,33 @@ export const actImageQueries: Record<string, Statement> = {
     ON CONFLICT(estimate_id, image_type) DO UPDATE SET data = excluded.data
   `),
   delete: db.prepare('DELETE FROM estimate_act_images WHERE estimate_id = ? AND image_type = ?'),
+}
+
+// ========== SAVED ACTS QUERIES ==========
+
+export const savedActQueries: Record<string, Statement> = {
+  findByEstimateId: db.prepare('SELECT * FROM saved_acts WHERE estimate_id = ? ORDER BY created_at DESC'),
+  findById: db.prepare('SELECT * FROM saved_acts WHERE id = ?'),
+  create: db.prepare(`
+    INSERT INTO saved_acts (id, estimate_id, view_id, act_number, act_date, executor_name, executor_details, customer_name, director_name, service_name, selection_mode, grand_total)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `),
+  delete: db.prepare('DELETE FROM saved_acts WHERE id = ?'),
+}
+
+export const savedActItemQueries: Record<string, Statement> = {
+  findByActId: db.prepare('SELECT * FROM saved_act_items WHERE act_id = ?'),
+  findByEstimateItemIds: db.prepare(`
+    SELECT sai.*, sa.act_number, sa.act_date, sa.id as act_id
+    FROM saved_act_items sai
+    JOIN saved_acts sa ON sa.id = sai.act_id
+    WHERE sa.estimate_id = ? AND sai.item_id IS NOT NULL
+    ORDER BY sa.created_at DESC
+  `),
+  create: db.prepare(`
+    INSERT INTO saved_act_items (id, act_id, item_id, section_id, name, unit, quantity, price, total)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `),
 }
 
 // Material queries
