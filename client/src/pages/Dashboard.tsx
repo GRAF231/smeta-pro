@@ -74,14 +74,27 @@ export default function Dashboard() {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <div className="flex justify-between items-center mb-8">
         <h1 className="font-display text-3xl font-bold text-white">Мои сметы</h1>
-        <Link to="/estimates/new" className="btn-primary">
-          <span className="flex items-center gap-2">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Добавить смету
-          </span>
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link 
+            to="/estimates/generate" 
+            className="btn-secondary text-sm py-2.5 px-4"
+          >
+            <span className="flex items-center gap-2">
+              <svg className="w-5 h-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              Из PDF (ИИ)
+            </span>
+          </Link>
+          <Link to="/estimates/new" className="btn-primary">
+            <span className="flex items-center gap-2">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Добавить смету
+            </span>
+          </Link>
+        </div>
       </div>
 
       {error && (

@@ -265,3 +265,31 @@ export function extractSheetIdFromUrl(url: string): string {
   }
   return match[1]
 }
+
+/**
+ * Fetch pricelist data from a Google Sheet and return it as formatted text.
+ * The sheet can have any structure — AI will parse it.
+ * We fetch all data and format it as a readable table for the AI prompt.
+ */
+export async function fetchPricelistData(sheetId: string): Promise<string> {
+  const auth = getAuthClient()
+  const sheets = google.sheets({ version: 'v4', auth })
+
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: sheetId,
+    range: 'A:Z', // Fetch all columns
+  })
+
+  const rows = response.data.values || []
+  
+  if (rows.length === 0) {
+    throw new Error('Прайс-лист пуст')
+  }
+
+  // Format rows as a readable table text for AI
+  const lines = rows.map(row => 
+    row.map(cell => String(cell || '').trim()).filter(c => c.length > 0).join(' | ')
+  ).filter(line => line.length > 0)
+
+  return lines.join('\n')
+}

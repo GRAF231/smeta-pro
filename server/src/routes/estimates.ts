@@ -1,5 +1,8 @@
 import { Router, Response } from 'express'
 import { v4 as uuidv4 } from 'uuid'
+import multer from 'multer'
+import { PDFParse } from 'pdf-parse'
+import sharp from 'sharp'
 import { 
   estimateQueries, 
   sectionQueries, 
@@ -14,10 +17,25 @@ import { authMiddleware, AuthRequest } from '../middleware/auth'
 import { 
   fetchSheetData, 
   parseEstimateData, 
-  extractSheetIdFromUrl 
+  extractSheetIdFromUrl,
+  fetchPricelistData
 } from '../services/googleSheets'
+import { generateEstimateFromPDF } from '../services/openrouter'
 
 const router = Router()
+
+// Configure multer for PDF upload (in-memory storage, max 100MB)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 100 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === 'application/pdf') {
+      cb(null, true)
+    } else {
+      cb(new Error('Допускаются только PDF файлы'))
+    }
+  },
+})
 
 interface EstimateRow {
   id: string
@@ -93,6 +111,145 @@ interface VersionItemRow {
   show_customer: number
   show_master: number
 }
+
+// Generate estimate from PDF using AI
+router.post('/generate', authMiddleware, upload.single('pdf'), async (req: AuthRequest, res: Response) => {
+  try {
+    const { title, pricelistUrl, comments } = req.body
+    const pdfFile = req.file
+
+    if (!pdfFile) {
+      return res.status(400).json({ error: 'PDF файл обязателен' })
+    }
+
+    if (!title) {
+      return res.status(400).json({ error: 'Название сметы обязательно' })
+    }
+
+    if (!pricelistUrl) {
+      return res.status(400).json({ error: 'Ссылка на прайс-лист обязательна' })
+    }
+
+    // Extract sheet ID from pricelist URL
+    let pricelistSheetId: string
+    try {
+      pricelistSheetId = extractSheetIdFromUrl(pricelistUrl)
+    } catch (err) {
+      return res.status(400).json({ error: (err as Error).message })
+    }
+
+    // Step 1: Convert PDF pages to images (PNG → JPEG for smaller size)
+    let pageDataUrls: string[]
+    try {
+      const parser = new PDFParse({ data: new Uint8Array(pdfFile.buffer) })
+      const screenshotResult = await parser.getScreenshot({
+        imageDataUrl: false,
+        imageBuffer: true,
+        desiredWidth: 800, // reduced width for smaller payload
+      })
+      await parser.destroy()
+
+      if (!screenshotResult.pages || screenshotResult.pages.length === 0) {
+        return res.status(400).json({ 
+          error: 'Не удалось обработать PDF. Убедитесь, что файл не поврежден.' 
+        })
+      }
+
+      // Convert PNG buffers to JPEG with compression via sharp
+      const jpegPromises = screenshotResult.pages.map(async (page) => {
+        const jpegBuffer = await sharp(Buffer.from(page.data))
+          .jpeg({ quality: 70 })
+          .toBuffer()
+        return `data:image/jpeg;base64,${jpegBuffer.toString('base64')}`
+      })
+      pageDataUrls = await Promise.all(jpegPromises)
+
+      const totalSizeMB = pageDataUrls.reduce((sum, url) => sum + url.length, 0) / (1024 * 1024)
+      console.log(`[PDF] Converted ${pageDataUrls.length} pages to JPEG (total ~${totalSizeMB.toFixed(1)} MB base64)`)
+    } catch (err) {
+      console.error('PDF screenshot error:', err)
+      return res.status(400).json({ error: 'Ошибка обработки PDF файла. Убедитесь, что файл не поврежден.' })
+    }
+
+    // Step 2: Fetch pricelist from Google Sheets
+    let pricelistText: string
+    try {
+      pricelistText = await fetchPricelistData(pricelistSheetId)
+    } catch (err) {
+      console.error('Pricelist fetch error:', err)
+      return res.status(400).json({ 
+        error: 'Не удалось получить прайс-лист из Google Таблицы. Убедитесь, что таблица доступна для сервисного аккаунта.' 
+      })
+    }
+
+    // Step 3: Generate estimate via AI (Gemini 2.0 Flash with vision)
+    let generated
+    try {
+      generated = await generateEstimateFromPDF(pageDataUrls, pricelistText, comments || '')
+    } catch (err) {
+      console.error('AI generation error:', err)
+      return res.status(500).json({ error: (err as Error).message || 'Ошибка генерации сметы через ИИ' })
+    }
+
+    // Step 4: Save the generated estimate to DB
+    const id = uuidv4()
+    const customerLinkToken = uuidv4()
+    const masterLinkToken = uuidv4()
+    const estimateTitle = title || generated.title || 'Смета (ИИ)'
+
+    estimateQueries.create.run(
+      id,
+      req.user!.id,
+      pricelistSheetId,
+      estimateTitle,
+      customerLinkToken,
+      masterLinkToken,
+      '{}'
+    )
+
+    // Create sections and items from AI response
+    let sectionOrder = 0
+    for (const section of generated.sections) {
+      const sectionId = uuidv4()
+      sectionQueries.create.run(sectionId, id, section.name, sectionOrder++, 1, 1)
+
+      let itemOrder = 0
+      for (const item of section.items) {
+        const customerTotal = item.quantity * item.customerPrice
+        const masterTotal = item.quantity * item.masterPrice
+
+        itemQueries.create.run(
+          uuidv4(),
+          id,
+          sectionId,
+          String(itemOrder + 1),
+          item.name,
+          item.unit,
+          item.quantity,
+          item.customerPrice,
+          customerTotal,
+          item.masterPrice,
+          masterTotal,
+          itemOrder++,
+          1, // showCustomer
+          1  // showMaster
+        )
+      }
+    }
+
+    res.status(201).json({
+      id,
+      title: estimateTitle,
+      googleSheetId: pricelistSheetId,
+      customerLinkToken,
+      masterLinkToken,
+      createdAt: new Date().toISOString(),
+    })
+  } catch (error) {
+    console.error('Generate estimate error:', error)
+    res.status(500).json({ error: 'Ошибка генерации сметы' })
+  }
+})
 
 // Get all estimates for current user
 router.get('/', authMiddleware, (req: AuthRequest, res: Response) => {

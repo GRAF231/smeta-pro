@@ -152,4 +152,11 @@ export const estimatesApi = {
     api.post<{ success: boolean; imageType: string }>(`/estimates/${estimateId}/act-images`, { imageType, data }),
   deleteActImage: (estimateId: string, imageType: 'logo' | 'stamp' | 'signature') =>
     api.delete(`/estimates/${estimateId}/act-images/${imageType}`),
+
+  // AI Generation from PDF
+  generateFromPdf: (formData: FormData) =>
+    api.post<Estimate>('/estimates/generate', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 360000, // 6 minutes for large PDF AI generation
+    }),
 }
