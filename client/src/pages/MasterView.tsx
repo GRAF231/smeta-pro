@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { estimatesApi, EstimateData } from '../services/api'
+import { projectsApi, EstimateData } from '../services/api'
 import EstimateTable from '../components/EstimateTable'
 
 export default function MasterView() {
@@ -24,7 +24,7 @@ export default function MasterView() {
 
   const loadEstimate = async (linkToken: string) => {
     try {
-      const res = await estimatesApi.getMasterView(linkToken)
+      const res = await projectsApi.getMasterView(linkToken)
       if (res.data.requiresPassword) {
         setRequiresPassword(true)
         setEstimateTitle(res.data.title)
@@ -46,7 +46,7 @@ export default function MasterView() {
     setPasswordError('')
 
     try {
-      const res = await estimatesApi.verifyMasterPassword(token, password.trim())
+      const res = await projectsApi.verifyMasterPassword(token, password.trim())
       setData(res.data)
       setRequiresPassword(false)
     } catch (err: any) {

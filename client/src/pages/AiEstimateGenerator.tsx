@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { estimatesApi } from '../services/api'
+import { projectsApi } from '../services/api'
 
 export default function AiEstimateGenerator() {
   const [title, setTitle] = useState('')
@@ -97,10 +97,10 @@ export default function AiEstimateGenerator() {
       setTimeout(() => setProgress('ИИ составляет смету на основе прайс-листа...'), 30000)
       setTimeout(() => setProgress('Почти готово, финализация сметы...'), 90000)
 
-      const res = await estimatesApi.generateFromPdf(formData)
+      const res = await projectsApi.generateFromPdf(formData)
       
-      // Redirect to estimate editor
-      navigate(`/estimates/${res.data.id}/edit`)
+      // Redirect to project editor
+      navigate(`/projects/${res.data.id}/edit`)
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string } } }
       setError(error.response?.data?.error || 'Ошибка генерации сметы. Попробуйте снова.')

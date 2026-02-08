@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { estimatesApi } from '../services/api'
+import { projectsApi } from '../services/api'
 
-export default function EstimateForm() {
+export default function ProjectForm() {
   const { id } = useParams()
   const isEdit = Boolean(id)
   
@@ -16,17 +16,17 @@ export default function EstimateForm() {
 
   useEffect(() => {
     if (isEdit && id) {
-      loadEstimate(id)
+      loadProject(id)
     }
   }, [id, isEdit])
 
-  const loadEstimate = async (estimateId: string) => {
+  const loadProject = async (projectId: string) => {
     try {
-      const res = await estimatesApi.getOne(estimateId)
+      const res = await projectsApi.getOne(projectId)
       setTitle(res.data.title)
       setGoogleSheetUrl(`https://docs.google.com/spreadsheets/d/${res.data.googleSheetId}`)
     } catch {
-      setError('Ошибка загрузки сметы')
+      setError('Ошибка загрузки проекта')
     } finally {
       setIsLoadingData(false)
     }
@@ -38,15 +38,20 @@ export default function EstimateForm() {
     setIsLoading(true)
 
     try {
+      const data: { title: string; googleSheetUrl?: string } = { title }
+      if (googleSheetUrl.trim()) {
+        data.googleSheetUrl = googleSheetUrl
+      }
+
       if (isEdit && id) {
-        await estimatesApi.update(id, { title, googleSheetUrl })
+        await projectsApi.update(id, data)
       } else {
-        await estimatesApi.create({ title, googleSheetUrl })
+        await projectsApi.create(data)
       }
       navigate('/dashboard')
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string } } }
-      setError(error.response?.data?.error || 'Ошибка сохранения сметы')
+      setError(error.response?.data?.error || 'Ошибка сохранения проекта')
     } finally {
       setIsLoading(false)
     }
@@ -64,7 +69,7 @@ export default function EstimateForm() {
     <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <div className="card animate-fade-in">
         <h1 className="font-display text-2xl font-bold text-white mb-8">
-          {isEdit ? 'Редактировать смету' : 'Новая смета'}
+          {isEdit ? 'Редактировать проект' : 'Новый проект'}
         </h1>
 
         {error && (
@@ -75,7 +80,7 @@ export default function EstimateForm() {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label htmlFor="title" className="label">Название сметы</label>
+            <label htmlFor="title" className="label">Название проекта</label>
             <input
               type="text"
               id="title"
@@ -88,7 +93,9 @@ export default function EstimateForm() {
           </div>
 
           <div>
-            <label htmlFor="googleSheetUrl" className="label">Ссылка на Google Таблицу</label>
+            <label htmlFor="googleSheetUrl" className="label">
+              Ссылка на Google Таблицу <span className="text-slate-500 font-normal">(необязательно)</span>
+            </label>
             <input
               type="url"
               id="googleSheetUrl"
@@ -96,29 +103,30 @@ export default function EstimateForm() {
               onChange={(e) => setGoogleSheetUrl(e.target.value)}
               className="input-field"
               placeholder="https://docs.google.com/spreadsheets/d/..."
-              required
             />
             <p className="mt-2 text-sm text-slate-500">
-              Убедитесь, что таблица открыта для сервисного аккаунта или по ссылке
+              Можно создать проект без таблицы и заполнить смету вручную, либо подключить Google Таблицу для автоимпорта
             </p>
           </div>
 
-          <div className="bg-slate-700/30 rounded-xl p-4">
-            <h3 className="font-medium text-white mb-3">Структура таблицы</h3>
-            <p className="text-sm text-slate-400 mb-3">
-              Сервис ожидает следующую структуру колонок:
-            </p>
-            <div className="text-sm space-y-1 text-slate-300">
-              <div><span className="text-slate-500">A:</span> Номер / Раздел</div>
-              <div><span className="text-slate-500">B:</span> Наименование работ</div>
-              <div><span className="text-slate-500">C:</span> Единица измерения</div>
-              <div><span className="text-slate-500">D:</span> Количество</div>
-              <div><span className="text-slate-500">E:</span> Цена (продажная)</div>
-              <div><span className="text-primary-400 font-medium">F:</span> <span className="text-primary-400">Сумма для заказчика</span></div>
-              <div><span className="text-slate-500">H:</span> Закупочная цена</div>
-              <div><span className="text-accent-400 font-medium">I:</span> <span className="text-accent-400">Сумма для мастеров</span></div>
+          {googleSheetUrl.trim() && (
+            <div className="bg-slate-700/30 rounded-xl p-4">
+              <h3 className="font-medium text-white mb-3">Структура таблицы</h3>
+              <p className="text-sm text-slate-400 mb-3">
+                Сервис ожидает следующую структуру колонок:
+              </p>
+              <div className="text-sm space-y-1 text-slate-300">
+                <div><span className="text-slate-500">A:</span> Номер / Раздел</div>
+                <div><span className="text-slate-500">B:</span> Наименование работ</div>
+                <div><span className="text-slate-500">C:</span> Единица измерения</div>
+                <div><span className="text-slate-500">D:</span> Количество</div>
+                <div><span className="text-slate-500">E:</span> Цена (продажная)</div>
+                <div><span className="text-primary-400 font-medium">F:</span> <span className="text-primary-400">Сумма для заказчика</span></div>
+                <div><span className="text-slate-500">H:</span> Закупочная цена</div>
+                <div><span className="text-accent-400 font-medium">I:</span> <span className="text-accent-400">Сумма для мастеров</span></div>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="flex gap-4 pt-4">
             <button
@@ -142,7 +150,7 @@ export default function EstimateForm() {
                   Сохранение...
                 </span>
               ) : (
-                isEdit ? 'Сохранить изменения' : 'Создать смету'
+                isEdit ? 'Сохранить изменения' : 'Создать проект'
               )}
             </button>
           </div>

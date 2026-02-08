@@ -55,9 +55,9 @@ function formatMaterial(m: MaterialRow) {
   }
 }
 
-// Helper: get estimateId from params (handles mergeParams type)
-function getEstimateId(req: AuthRequest): string {
-  return String(req.params.estimateId)
+// Helper: get projectId from params (handles mergeParams type)
+function getProjectId(req: AuthRequest): string {
+  return String(req.params.projectId)
 }
 
 // Helper: verify estimate ownership
@@ -70,7 +70,7 @@ function getEstimateForUser(estimateId: string, userId: string): EstimateRow | n
 // GET / — Get all materials for an estimate
 router.get('/', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
-    const estimate = getEstimateForUser(getEstimateId(req), req.user!.id)
+    const estimate = getEstimateForUser(getProjectId(req), req.user!.id)
     if (!estimate) {
       return res.status(404).json({ error: 'Смета не найдена' })
     }
@@ -97,7 +97,7 @@ router.post('/parse', authMiddleware, async (req: AuthRequest, res: Response) =>
       return res.status(400).json({ error: 'Максимум 20 ссылок за раз' })
     }
 
-    const estimate = getEstimateForUser(getEstimateId(req), req.user!.id)
+    const estimate = getEstimateForUser(getProjectId(req), req.user!.id)
     if (!estimate) {
       return res.status(404).json({ error: 'Смета не найдена' })
     }
@@ -164,7 +164,7 @@ router.post('/parse', authMiddleware, async (req: AuthRequest, res: Response) =>
 // PUT /:materialId — Update a material (manual editing)
 router.put('/:materialId', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
-    const estimate = getEstimateForUser(getEstimateId(req), req.user!.id)
+    const estimate = getEstimateForUser(getProjectId(req), req.user!.id)
     if (!estimate) {
       return res.status(404).json({ error: 'Смета не найдена' })
     }
@@ -203,7 +203,7 @@ router.put('/:materialId', authMiddleware, (req: AuthRequest, res: Response) => 
 // DELETE /:materialId — Delete a material
 router.delete('/:materialId', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
-    const estimate = getEstimateForUser(getEstimateId(req), req.user!.id)
+    const estimate = getEstimateForUser(getProjectId(req), req.user!.id)
     if (!estimate) {
       return res.status(404).json({ error: 'Смета не найдена' })
     }
@@ -224,7 +224,7 @@ router.delete('/:materialId', authMiddleware, (req: AuthRequest, res: Response) 
 // POST /refresh — Refresh all materials (re-parse URLs)
 router.post('/refresh', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const estimate = getEstimateForUser(getEstimateId(req), req.user!.id)
+    const estimate = getEstimateForUser(getProjectId(req), req.user!.id)
     if (!estimate) {
       return res.status(404).json({ error: 'Смета не найдена' })
     }
@@ -279,7 +279,7 @@ router.post('/refresh', authMiddleware, async (req: AuthRequest, res: Response) 
 // POST /refresh/:materialId — Refresh one material
 router.post('/refresh/:materialId', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const estimate = getEstimateForUser(getEstimateId(req), req.user!.id)
+    const estimate = getEstimateForUser(getProjectId(req), req.user!.id)
     if (!estimate) {
       return res.status(404).json({ error: 'Смета не найдена' })
     }

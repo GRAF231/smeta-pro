@@ -5,8 +5,10 @@ import Home from './pages/Home'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
-import EstimateForm from './pages/EstimateForm'
-import EstimateEditor from './pages/EstimateEditor'
+import ProjectForm from './pages/ProjectForm'
+import ProjectEditor from './pages/ProjectEditor'
+import EstimatePage from './pages/EstimatePage'
+import ActPage from './pages/ActPage'
 import AiEstimateGenerator from './pages/AiEstimateGenerator'
 import CustomerView from './pages/CustomerView'
 import MasterView from './pages/MasterView'
@@ -39,15 +41,15 @@ function App() {
           }
         />
         <Route
-          path="estimates/new"
+          path="projects/new"
           element={
             <ProtectedRoute>
-              <EstimateForm />
+              <ProjectForm />
             </ProtectedRoute>
           }
         />
         <Route
-          path="estimates/generate"
+          path="projects/generate"
           element={
             <ProtectedRoute>
               <AiEstimateGenerator />
@@ -55,15 +57,31 @@ function App() {
           }
         />
         <Route
-          path="estimates/:id/edit"
+          path="projects/:id/edit"
           element={
             <ProtectedRoute>
-              <EstimateEditor />
+              <ProjectEditor />
             </ProtectedRoute>
           }
         />
         <Route
-          path="estimates/:id/materials"
+          path="projects/:id/estimate"
+          element={
+            <ProtectedRoute>
+              <EstimatePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="projects/:id/act"
+          element={
+            <ProtectedRoute>
+              <ActPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="projects/:id/materials"
           element={
             <ProtectedRoute>
               <MaterialsPage />
@@ -79,4 +97,3 @@ function App() {
 }
 
 export default App
-

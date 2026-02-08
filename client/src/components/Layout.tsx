@@ -28,7 +28,7 @@ export default function Layout() {
               {user ? (
                 <>
                   <Link to="/dashboard" className="text-slate-300 hover:text-white transition-colors">
-                    Мои сметы
+                    Мои проекты
                   </Link>
                   <div className="flex items-center gap-3 pl-4 border-l border-slate-700">
                     <span className="text-sm text-slate-400">{user.name}</span>

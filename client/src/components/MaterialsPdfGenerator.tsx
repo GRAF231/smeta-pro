@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
-import { Material, estimatesApi } from '../services/api'
+import { Material, projectsApi } from '../services/api'
 
 interface MaterialsPdfGeneratorProps {
-  estimateId: string
+  projectId: string
   materials: Material[]
-  estimateTitle: string
+  projectTitle: string
   onClose: () => void
 }
 
@@ -26,9 +26,9 @@ function formatDateRu(dateStr: string): string {
 }
 
 export default function MaterialsPdfGenerator({
-  estimateId,
+  projectId,
   materials,
-  estimateTitle,
+  projectTitle,
   onClose,
 }: MaterialsPdfGeneratorProps) {
   const [step, setStep] = useState<'config' | 'preview'>('config')
@@ -50,7 +50,7 @@ export default function MaterialsPdfGenerator({
   // Load saved config from localStorage
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(`kp-config-${estimateId}`)
+      const saved = localStorage.getItem(`kp-config-${projectId}`)
       if (saved) {
         const config = JSON.parse(saved)
         if (config.executorName) setExecutorName(config.executorName)
@@ -58,33 +58,33 @@ export default function MaterialsPdfGenerator({
         if (config.validDays) setValidDays(config.validDays)
       }
       // Also try act-config for executor info
-      const actSaved = localStorage.getItem(`act-config-${estimateId}`)
+      const actSaved = localStorage.getItem(`act-config-${projectId}`)
       if (actSaved) {
         const actConfig = JSON.parse(actSaved)
         if (!executorName && actConfig.executorName) setExecutorName(actConfig.executorName)
         if (!executorDetails && actConfig.executorDetails) setExecutorDetails(actConfig.executorDetails)
       }
     } catch { /* ignore */ }
-  }, [estimateId])
+  }, [projectId])
 
   // Load images (reuse act images)
   useEffect(() => {
     loadImages()
-  }, [estimateId])
+  }, [projectId])
 
   const loadImages = async () => {
     try {
-      const res = await estimatesApi.getActImages(estimateId)
+      const res = await projectsApi.getActImages(projectId)
       setImages(res.data)
     } catch { /* ok */ }
   }
 
   // Save config
   const saveConfig = useCallback(() => {
-    localStorage.setItem(`kp-config-${estimateId}`, JSON.stringify({
+    localStorage.setItem(`kp-config-${projectId}`, JSON.stringify({
       executorName, executorDetails, validDays,
     }))
-  }, [estimateId, executorName, executorDetails, validDays])
+  }, [projectId, executorName, executorDetails, validDays])
 
   useEffect(() => {
     saveConfig()
@@ -160,7 +160,7 @@ export default function MaterialsPdfGenerator({
         pageNum++
       }
 
-      pdf.save(`КП_${kpNumber || 'б-н'}_${estimateTitle}_${kpDate}.pdf`)
+      pdf.save(`КП_${kpNumber || 'б-н'}_${projectTitle}_${kpDate}.pdf`)
     } catch (err) {
       console.error('PDF generation error:', err)
       alert('Ошибка при создании PDF. Попробуйте ещё раз.')

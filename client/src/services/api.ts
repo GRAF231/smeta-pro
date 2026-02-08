@@ -22,10 +22,12 @@ api.interceptors.response.use(
   }
 )
 
-export interface Estimate {
+// ========== Project (formerly Estimate) ==========
+
+export interface Project {
   id: string
   title: string
-  googleSheetId: string
+  googleSheetId: string  // может быть пустой строкой если проект без таблицы
   customerLinkToken: string
   masterLinkToken: string
   masterPassword?: string
@@ -57,7 +59,7 @@ export interface EstimateSection {
   items: EstimateItem[]
 }
 
-export interface EstimateWithSections extends Estimate {
+export interface ProjectWithEstimate extends Project {
   sections: EstimateSection[]
 }
 
@@ -94,68 +96,70 @@ export interface ViewItem {
   total: number
 }
 
-// Estimates API
-export const estimatesApi = {
-  getAll: () => api.get<Estimate[]>('/estimates'),
-  getOne: (id: string) => api.get<EstimateWithSections>(`/estimates/${id}`),
-  create: (data: { title: string; googleSheetUrl: string }) => 
-    api.post<Estimate>('/estimates', data),
-  update: (id: string, data: { title: string; googleSheetUrl: string }) => 
-    api.put<Estimate>(`/estimates/${id}`, data),
-  delete: (id: string) => api.delete(`/estimates/${id}`),
+// Projects API
+export const projectsApi = {
+  getAll: () => api.get<Project[]>('/projects'),
+  getOne: (id: string) => api.get<ProjectWithEstimate>(`/projects/${id}`),
+  create: (data: { title: string; googleSheetUrl?: string }) => 
+    api.post<Project>('/projects', data),
+  update: (id: string, data: { title: string; googleSheetUrl?: string }) => 
+    api.put<Project>(`/projects/${id}`, data),
+  delete: (id: string) => api.delete(`/projects/${id}`),
   
   // Sync with Google Sheets
-  sync: (id: string) => api.post<{ message: string; syncedAt: string }>(`/estimates/${id}/sync`),
+  sync: (id: string) => api.post<{ message: string; syncedAt: string }>(`/projects/${id}/sync`),
   
   // Sections
-  addSection: (estimateId: string, name: string) => 
-    api.post<EstimateSection>(`/estimates/${estimateId}/sections`, { name }),
-  updateSection: (estimateId: string, sectionId: string, data: { name: string; showCustomer: boolean; showMaster: boolean }) =>
-    api.put(`/estimates/${estimateId}/sections/${sectionId}`, data),
+  addSection: (projectId: string, name: string) => 
+    api.post<EstimateSection>(`/projects/${projectId}/sections`, { name }),
+  updateSection: (projectId: string, sectionId: string, data: { name: string; showCustomer: boolean; showMaster: boolean }) =>
+    api.put(`/projects/${projectId}/sections/${sectionId}`, data),
+  deleteSection: (projectId: string, sectionId: string) =>
+    api.delete(`/projects/${projectId}/sections/${sectionId}`),
   
   // Items
-  addItem: (estimateId: string, data: { sectionId: string; name: string; unit: string; quantity: number; customerPrice: number; masterPrice: number }) =>
-    api.post<EstimateItem>(`/estimates/${estimateId}/items`, data),
-  updateItem: (estimateId: string, itemId: string, data: Partial<EstimateItem>) =>
-    api.put(`/estimates/${estimateId}/items/${itemId}`, data),
-  deleteItem: (estimateId: string, itemId: string) =>
-    api.delete(`/estimates/${estimateId}/items/${itemId}`),
+  addItem: (projectId: string, data: { sectionId: string; name: string; unit: string; quantity: number; customerPrice: number; masterPrice: number }) =>
+    api.post<EstimateItem>(`/projects/${projectId}/items`, data),
+  updateItem: (projectId: string, itemId: string, data: Partial<EstimateItem>) =>
+    api.put(`/projects/${projectId}/items/${itemId}`, data),
+  deleteItem: (projectId: string, itemId: string) =>
+    api.delete(`/projects/${projectId}/items/${itemId}`),
   
   // Public views
   getCustomerView: (token: string) => 
-    api.get<EstimateData>(`/estimates/customer/${token}`),
+    api.get<EstimateData>(`/projects/customer/${token}`),
   getMasterView: (token: string) => 
-    api.get<EstimateData>(`/estimates/master/${token}`),
+    api.get<EstimateData>(`/projects/master/${token}`),
   verifyMasterPassword: (token: string, password: string) =>
-    api.post<EstimateData>(`/estimates/master/${token}/verify`, { password }),
+    api.post<EstimateData>(`/projects/master/${token}/verify`, { password }),
   
   // Master password
-  setMasterPassword: (estimateId: string, password: string) =>
-    api.put<{ success: boolean; masterPassword: string }>(`/estimates/${estimateId}/master-password`, { password }),
+  setMasterPassword: (projectId: string, password: string) =>
+    api.put<{ success: boolean; masterPassword: string }>(`/projects/${projectId}/master-password`, { password }),
   
   // Versions
-  getVersions: (estimateId: string) =>
-    api.get<EstimateVersion[]>(`/estimates/${estimateId}/versions`),
-  createVersion: (estimateId: string, name?: string) =>
-    api.post<EstimateVersion>(`/estimates/${estimateId}/versions`, { name }),
-  getVersion: (estimateId: string, versionId: string) =>
-    api.get<EstimateVersionWithSections>(`/estimates/${estimateId}/versions/${versionId}`),
-  restoreVersion: (estimateId: string, versionId: string) =>
+  getVersions: (projectId: string) =>
+    api.get<EstimateVersion[]>(`/projects/${projectId}/versions`),
+  createVersion: (projectId: string, name?: string) =>
+    api.post<EstimateVersion>(`/projects/${projectId}/versions`, { name }),
+  getVersion: (projectId: string, versionId: string) =>
+    api.get<EstimateVersionWithSections>(`/projects/${projectId}/versions/${versionId}`),
+  restoreVersion: (projectId: string, versionId: string) =>
     api.post<{ message: string; restoredFrom: { versionNumber: number; name: string | null } }>(
-      `/estimates/${estimateId}/versions/${versionId}/restore`
+      `/projects/${projectId}/versions/${versionId}/restore`
     ),
 
   // Act images
-  getActImages: (estimateId: string) =>
-    api.get<Record<string, string>>(`/estimates/${estimateId}/act-images`),
-  uploadActImage: (estimateId: string, imageType: 'logo' | 'stamp' | 'signature', data: string) =>
-    api.post<{ success: boolean; imageType: string }>(`/estimates/${estimateId}/act-images`, { imageType, data }),
-  deleteActImage: (estimateId: string, imageType: 'logo' | 'stamp' | 'signature') =>
-    api.delete(`/estimates/${estimateId}/act-images/${imageType}`),
+  getActImages: (projectId: string) =>
+    api.get<Record<string, string>>(`/projects/${projectId}/act-images`),
+  uploadActImage: (projectId: string, imageType: 'logo' | 'stamp' | 'signature', data: string) =>
+    api.post<{ success: boolean; imageType: string }>(`/projects/${projectId}/act-images`, { imageType, data }),
+  deleteActImage: (projectId: string, imageType: 'logo' | 'stamp' | 'signature') =>
+    api.delete(`/projects/${projectId}/act-images/${imageType}`),
 
   // AI Generation from PDF
   generateFromPdf: (formData: FormData) =>
-    api.post<Estimate>('/estimates/generate', formData, {
+    api.post<Project>('/projects/generate', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 360000, // 6 minutes for large PDF AI generation
     }),
@@ -186,27 +190,27 @@ export interface MaterialRefreshResult {
 }
 
 export const materialsApi = {
-  getAll: (estimateId: string) =>
-    api.get<Material[]>(`/estimates/${estimateId}/materials`),
+  getAll: (projectId: string) =>
+    api.get<Material[]>(`/projects/${projectId}/materials`),
 
-  parse: (estimateId: string, urls: string[]) =>
-    api.post<Material[]>(`/estimates/${estimateId}/materials/parse`, { urls }, {
+  parse: (projectId: string, urls: string[]) =>
+    api.post<Material[]>(`/projects/${projectId}/materials/parse`, { urls }, {
       timeout: 300000, // 5 minutes for AI parsing
     }),
 
-  update: (estimateId: string, materialId: string, data: Partial<Material>) =>
-    api.put<Material>(`/estimates/${estimateId}/materials/${materialId}`, data),
+  update: (projectId: string, materialId: string, data: Partial<Material>) =>
+    api.put<Material>(`/projects/${projectId}/materials/${materialId}`, data),
 
-  delete: (estimateId: string, materialId: string) =>
-    api.delete(`/estimates/${estimateId}/materials/${materialId}`),
+  delete: (projectId: string, materialId: string) =>
+    api.delete(`/projects/${projectId}/materials/${materialId}`),
 
-  refreshAll: (estimateId: string) =>
-    api.post<MaterialRefreshResult>(`/estimates/${estimateId}/materials/refresh`, {}, {
+  refreshAll: (projectId: string) =>
+    api.post<MaterialRefreshResult>(`/projects/${projectId}/materials/refresh`, {}, {
       timeout: 300000,
     }),
 
-  refreshOne: (estimateId: string, materialId: string) =>
-    api.post<Material>(`/estimates/${estimateId}/materials/refresh/${materialId}`, {}, {
+  refreshOne: (projectId: string, materialId: string) =>
+    api.post<Material>(`/projects/${projectId}/materials/refresh/${materialId}`, {}, {
       timeout: 60000,
     }),
 }

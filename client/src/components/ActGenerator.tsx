@@ -1,13 +1,13 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
-import { EstimateSection, estimatesApi } from '../services/api'
+import { EstimateSection, projectsApi } from '../services/api'
 import { amountToWordsRu } from '../utils/numberToWords'
 
 interface ActGeneratorProps {
-  estimateId: string
+  projectId: string
   sections: EstimateSection[]
-  onClose: () => void
+  onBack: () => void
 }
 
 const MONTH_NAMES_RU = [
@@ -46,7 +46,7 @@ const IMAGE_LABELS: Record<ImageType, string> = {
   signature: 'Подпись',
 }
 
-export default function ActGenerator({ estimateId, sections, onClose }: ActGeneratorProps) {
+export default function ActGenerator({ projectId, sections, onBack }: ActGeneratorProps) {
   const [step, setStep] = useState<'config' | 'preview'>('config')
 
   // Act config
@@ -74,7 +74,7 @@ export default function ActGenerator({ estimateId, sections, onClose }: ActGener
   // Load saved config from localStorage
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(`act-config-${estimateId}`)
+      const saved = localStorage.getItem(`act-config-${projectId}`)
       if (saved) {
         const config = JSON.parse(saved)
         if (config.executorName) setExecutorName(config.executorName)
@@ -84,16 +84,16 @@ export default function ActGenerator({ estimateId, sections, onClose }: ActGener
         if (config.serviceName) setServiceName(config.serviceName)
       }
     } catch { /* ignore parse errors */ }
-  }, [estimateId])
+  }, [projectId])
 
   // Load images from server
   useEffect(() => {
     loadImages()
-  }, [estimateId])
+  }, [projectId])
 
   const loadImages = async () => {
     try {
-      const res = await estimatesApi.getActImages(estimateId)
+      const res = await projectsApi.getActImages(projectId)
       setImages(res.data)
     } catch {
       // Images may not exist yet, that's ok
@@ -102,10 +102,10 @@ export default function ActGenerator({ estimateId, sections, onClose }: ActGener
 
   // Save config on change
   const saveConfig = useCallback(() => {
-    localStorage.setItem(`act-config-${estimateId}`, JSON.stringify({
+    localStorage.setItem(`act-config-${projectId}`, JSON.stringify({
       executorName, executorDetails, customerName, directorName, serviceName,
     }))
-  }, [estimateId, executorName, executorDetails, customerName, directorName, serviceName])
+  }, [projectId, executorName, executorDetails, customerName, directorName, serviceName])
 
   useEffect(() => {
     saveConfig()
@@ -122,7 +122,7 @@ export default function ActGenerator({ estimateId, sections, onClose }: ActGener
         reader.readAsDataURL(file)
       })
 
-      await estimatesApi.uploadActImage(estimateId, imageType, dataUrl)
+      await projectsApi.uploadActImage(projectId, imageType, dataUrl)
       setImages(prev => ({ ...prev, [imageType]: dataUrl }))
     } catch {
       alert('Ошибка загрузки изображения')
@@ -134,7 +134,7 @@ export default function ActGenerator({ estimateId, sections, onClose }: ActGener
   // Handle image delete
   const handleImageDelete = async (imageType: ImageType) => {
     try {
-      await estimatesApi.deleteActImage(estimateId, imageType)
+      await projectsApi.deleteActImage(projectId, imageType)
       setImages(prev => {
         const next = { ...prev }
         delete next[imageType]
@@ -366,57 +366,53 @@ export default function ActGenerator({ estimateId, sections, onClose }: ActGener
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-slate-800 rounded-2xl border border-slate-700 w-full max-w-5xl max-h-[95vh] overflow-hidden flex flex-col">
-
-        {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            {step === 'preview' && (
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div>
+          <button onClick={onBack} className="text-slate-400 hover:text-white mb-2 flex items-center gap-1">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Назад к проекту
+          </button>
+          <h1 className="font-display text-2xl font-bold text-white">
+            {step === 'config' ? 'Создание акта выполненных работ' : 'Предпросмотр акта'}
+          </h1>
+        </div>
+        <div className="flex items-center gap-3">
+          {step === 'preview' && (
+            <>
               <button
                 onClick={() => setStep('config')}
-                className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+                className="btn-secondary flex items-center gap-2"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
+                Назад к настройке
               </button>
-            )}
-            <h2 className="font-display text-xl font-bold text-white">
-              {step === 'config' ? 'Создание акта выполненных работ' : 'Предпросмотр акта'}
-            </h2>
-          </div>
-          <div className="flex items-center gap-3">
-            {step === 'preview' && (
               <button
                 onClick={handleDownload}
                 disabled={isGenerating}
-                className="btn-primary flex items-center gap-2 text-sm py-2"
+                className="btn-primary flex items-center gap-2"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
                 {isGenerating ? 'Генерация...' : 'Скачать PDF'}
               </button>
-            )}
-            <button
-              onClick={onClose}
-              className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
+            </>
+          )}
         </div>
+      </div>
 
-        {/* Modal Content */}
-        <div className="flex-1 overflow-y-auto">
+      <div>
           {step === 'config' ? (
-            <div className="p-6 space-y-6">
+            <div className="space-y-6">
 
               {/* Images Upload */}
-              <div className="space-y-4">
+              <div className="card space-y-4">
                 <h3 className="font-semibold text-white flex items-center gap-2">
                   <div className="w-6 h-6 rounded bg-green-500/20 flex items-center justify-center text-green-400 text-xs">
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -478,7 +474,7 @@ export default function ActGenerator({ estimateId, sections, onClose }: ActGener
               </div>
 
               {/* Act Details */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="card grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="label">Номер акта *</label>
                   <input
@@ -500,8 +496,8 @@ export default function ActGenerator({ estimateId, sections, onClose }: ActGener
                 </div>
               </div>
 
-              {/* Executor */}
-              <div className="space-y-4">
+              {/* Executor & Customer & Signature */}
+              <div className="card space-y-4">
                 <h3 className="font-semibold text-white flex items-center gap-2">
                   <div className="w-6 h-6 rounded bg-primary-500/20 flex items-center justify-center text-primary-400 text-xs font-bold">И</div>
                   Исполнитель
@@ -526,43 +522,41 @@ export default function ActGenerator({ estimateId, sections, onClose }: ActGener
                     rows={2}
                   />
                 </div>
-              </div>
 
-              {/* Customer */}
-              <div className="space-y-4">
-                <h3 className="font-semibold text-white flex items-center gap-2">
-                  <div className="w-6 h-6 rounded bg-accent-500/20 flex items-center justify-center text-accent-400 text-xs font-bold">З</div>
-                  Заказчик
-                </h3>
-                <div>
-                  <label className="label">ФИО заказчика *</label>
-                  <input
-                    type="text"
-                    value={customerName}
-                    onChange={e => setCustomerName(e.target.value)}
-                    placeholder="Шаповалова Елена Владимировна"
-                    className="input-field"
-                  />
+                <div className="border-t border-slate-700/50 pt-4">
+                  <h3 className="font-semibold text-white flex items-center gap-2 mb-4">
+                    <div className="w-6 h-6 rounded bg-accent-500/20 flex items-center justify-center text-accent-400 text-xs font-bold">З</div>
+                    Заказчик
+                  </h3>
+                  <div>
+                    <label className="label">ФИО заказчика *</label>
+                    <input
+                      type="text"
+                      value={customerName}
+                      onChange={e => setCustomerName(e.target.value)}
+                      placeholder="Шаповалова Елена Владимировна"
+                      className="input-field"
+                    />
+                  </div>
                 </div>
-              </div>
 
-              {/* Signature */}
-              <div className="space-y-4">
-                <h3 className="font-semibold text-white">Подпись</h3>
-                <div>
-                  <label className="label">ФИО директора (для подписи)</label>
-                  <input
-                    type="text"
-                    value={directorName}
-                    onChange={e => setDirectorName(e.target.value)}
-                    placeholder="Чурина Е.А."
-                    className="input-field"
-                  />
+                <div className="border-t border-slate-700/50 pt-4">
+                  <h3 className="font-semibold text-white mb-4">Подпись</h3>
+                  <div>
+                    <label className="label">ФИО директора (для подписи)</label>
+                    <input
+                      type="text"
+                      value={directorName}
+                      onChange={e => setDirectorName(e.target.value)}
+                      placeholder="Чурина Е.А."
+                      className="input-field"
+                    />
+                  </div>
                 </div>
               </div>
 
               {/* Selection Mode */}
-              <div className="space-y-4">
+              <div className="card space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-white">Выберите позиции для акта</h3>
                   <div className="flex items-center gap-2">
@@ -660,7 +654,7 @@ export default function ActGenerator({ estimateId, sections, onClose }: ActGener
             </div>
           ) : (
             /* Preview Step */
-            <div className="p-6">
+            <div>
               <div className="bg-white rounded-xl shadow-lg overflow-auto mx-auto" style={{ maxWidth: '850px' }}>
                 {/* The actual act document rendered for capture */}
                 <div
@@ -836,23 +830,22 @@ export default function ActGenerator({ estimateId, sections, onClose }: ActGener
           )}
         </div>
 
-        {/* Footer */}
-        {step === 'config' && (
-          <div className="flex items-center justify-end px-6 py-4 border-t border-slate-700 flex-shrink-0">
-            <button
-              onClick={() => setStep('preview')}
-              disabled={!canPreview}
-              className={`btn-primary flex items-center gap-2 ${!canPreview ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
-              Предпросмотр
-            </button>
-          </div>
-        )}
-      </div>
+      {/* Footer */}
+      {step === 'config' && (
+        <div className="flex items-center justify-end mt-6">
+          <button
+            onClick={() => setStep('preview')}
+            disabled={!canPreview}
+            className={`btn-primary flex items-center gap-2 ${!canPreview ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+            Предпросмотр
+          </button>
+        </div>
+      )}
     </div>
   )
 }

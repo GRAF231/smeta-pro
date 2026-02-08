@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { estimatesApi, EstimateData } from '../services/api'
+import { projectsApi, EstimateData } from '../services/api'
 import EstimateTable from '../components/EstimateTable'
 
 export default function CustomerView() {
@@ -17,7 +17,7 @@ export default function CustomerView() {
 
   const loadEstimate = async (linkToken: string) => {
     try {
-      const res = await estimatesApi.getCustomerView(linkToken)
+      const res = await projectsApi.getCustomerView(linkToken)
       setData(res.data)
     } catch {
       setError('Смета не найдена или ссылка недействительна')

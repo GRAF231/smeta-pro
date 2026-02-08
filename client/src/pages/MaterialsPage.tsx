@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { materialsApi, Material, estimatesApi, Estimate } from '../services/api'
+import { materialsApi, Material, projectsApi, Project } from '../services/api'
 import MaterialsPdfGenerator from '../components/MaterialsPdfGenerator'
 
 export default function MaterialsPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
-  const [estimate, setEstimate] = useState<Estimate | null>(null)
+  const [project, setProject] = useState<Project | null>(null)
   const [materials, setMaterials] = useState<Material[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
@@ -33,13 +33,13 @@ export default function MaterialsPage() {
     if (id) loadData(id)
   }, [id])
 
-  const loadData = async (estimateId: string) => {
+  const loadData = async (projectId: string) => {
     try {
-      const [estRes, matRes] = await Promise.all([
-        estimatesApi.getOne(estimateId),
-        materialsApi.getAll(estimateId),
+      const [projRes, matRes] = await Promise.all([
+        projectsApi.getOne(projectId),
+        materialsApi.getAll(projectId),
       ])
-      setEstimate(estRes.data)
+      setProject(projRes.data)
       setMaterials(matRes.data)
     } catch {
       setError('Ошибка загрузки данных')
@@ -160,10 +160,10 @@ export default function MaterialsPage() {
     )
   }
 
-  if (!estimate) {
+  if (!project) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-12 text-center">
-        <p className="text-red-400">{error || 'Смета не найдена'}</p>
+        <p className="text-red-400">{error || 'Проект не найден'}</p>
       </div>
     )
   }
@@ -174,16 +174,16 @@ export default function MaterialsPage() {
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8">
         <div>
           <button
-            onClick={() => navigate(`/estimates/${id}/edit`)}
+            onClick={() => navigate(`/projects/${id}/edit`)}
             className="text-slate-400 hover:text-white mb-2 flex items-center gap-1"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
-            Назад к смете
+            Назад к проекту
           </button>
           <h1 className="font-display text-2xl font-bold text-white">
-            Материалы: {estimate.title}
+            Материалы: {project.title}
           </h1>
           <p className="text-sm text-slate-500 mt-1">
             {materials.length} позиций
@@ -514,9 +514,9 @@ export default function MaterialsPage() {
       {/* PDF Generator Modal */}
       {showPdfGenerator && (
         <MaterialsPdfGenerator
-          estimateId={id!}
+          projectId={id!}
           materials={materials}
-          estimateTitle={estimate.title}
+          projectTitle={project.title}
           onClose={() => setShowPdfGenerator(false)}
         />
       )}

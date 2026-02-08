@@ -326,51 +326,66 @@ router.get('/:id', authMiddleware, (req: AuthRequest, res: Response) => {
   }
 })
 
-// Create estimate and sync data
+// Create project (Google Sheet is optional — can create empty project)
 router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const { title, googleSheetUrl } = req.body
 
-    if (!title || !googleSheetUrl) {
-      return res.status(400).json({ error: 'Название и ссылка на таблицу обязательны' })
-    }
-
-    let googleSheetId: string
-    try {
-      googleSheetId = extractSheetIdFromUrl(googleSheetUrl)
-    } catch (err) {
-      return res.status(400).json({ error: (err as Error).message })
-    }
-
-    // Fetch and parse data from Google Sheets
-    let rows: string[][]
-    try {
-      rows = await fetchSheetData(googleSheetId)
-    } catch (err) {
-      console.error('Sheet access error:', err)
-      return res.status(400).json({ 
-        error: 'Не удалось получить доступ к таблице. Убедитесь, что таблица открыта для сервисного аккаунта.' 
-      })
+    if (!title) {
+      return res.status(400).json({ error: 'Название проекта обязательно' })
     }
 
     const id = uuidv4()
     const customerLinkToken = uuidv4()
     const masterLinkToken = uuidv4()
 
-    // Create estimate
-    estimateQueries.create.run(
-      id,
-      req.user!.id,
-      googleSheetId,
-      title,
-      customerLinkToken,
-      masterLinkToken,
-      '{}'
-    )
+    let googleSheetId = ''
 
-    // Sync items from Google Sheets
-    syncEstimateItems(id, rows)
-    estimateQueries.updateLastSynced.run(id)
+    if (googleSheetUrl) {
+      // Parse Google Sheet URL if provided
+      try {
+        googleSheetId = extractSheetIdFromUrl(googleSheetUrl)
+      } catch (err) {
+        return res.status(400).json({ error: (err as Error).message })
+      }
+
+      // Fetch and parse data from Google Sheets
+      let rows: string[][]
+      try {
+        rows = await fetchSheetData(googleSheetId)
+      } catch (err) {
+        console.error('Sheet access error:', err)
+        return res.status(400).json({ 
+          error: 'Не удалось получить доступ к таблице. Убедитесь, что таблица открыта для сервисного аккаунта.' 
+        })
+      }
+
+      // Create project
+      estimateQueries.create.run(
+        id,
+        req.user!.id,
+        googleSheetId,
+        title,
+        customerLinkToken,
+        masterLinkToken,
+        '{}'
+      )
+
+      // Sync items from Google Sheets
+      syncEstimateItems(id, rows)
+      estimateQueries.updateLastSynced.run(id)
+    } else {
+      // Create empty project without Google Sheet
+      estimateQueries.create.run(
+        id,
+        req.user!.id,
+        '',
+        title,
+        customerLinkToken,
+        masterLinkToken,
+        '{}'
+      )
+    }
 
     res.status(201).json({
       id,
@@ -381,8 +396,8 @@ router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
       createdAt: new Date().toISOString(),
     })
   } catch (error) {
-    console.error('Create estimate error:', error)
-    res.status(500).json({ error: 'Ошибка создания сметы' })
+    console.error('Create project error:', error)
+    res.status(500).json({ error: 'Ошибка создания проекта' })
   }
 })
 
@@ -392,7 +407,11 @@ router.post('/:id/sync', authMiddleware, async (req: AuthRequest, res: Response)
     const estimate = estimateQueries.findById.get(req.params.id) as EstimateRow | undefined
     
     if (!estimate || estimate.brigadir_id !== req.user!.id) {
-      return res.status(404).json({ error: 'Смета не найдена' })
+      return res.status(404).json({ error: 'Проект не найден' })
+    }
+
+    if (!estimate.google_sheet_id) {
+      return res.status(400).json({ error: 'Проект не привязан к Google таблице' })
     }
 
     // Fetch data from Google Sheets
@@ -540,6 +559,29 @@ router.delete('/:id/items/:itemId', authMiddleware, (req: AuthRequest, res: Resp
   }
 })
 
+// Delete section
+router.delete('/:id/sections/:sectionId', authMiddleware, (req: AuthRequest, res: Response) => {
+  try {
+    const estimate = estimateQueries.findById.get(req.params.id) as EstimateRow | undefined
+    
+    if (!estimate || estimate.brigadir_id !== req.user!.id) {
+      return res.status(404).json({ error: 'Проект не найден' })
+    }
+
+    // Delete items in the section first
+    const items = itemQueries.findBySectionId.all(req.params.sectionId) as ItemRow[]
+    for (const item of items) {
+      itemQueries.delete.run(item.id)
+    }
+
+    sectionQueries.delete.run(req.params.sectionId)
+    res.status(204).send()
+  } catch (error) {
+    console.error('Delete section error:', error)
+    res.status(500).json({ error: 'Ошибка удаления раздела' })
+  }
+})
+
 // Add new section
 router.post('/:id/sections', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
@@ -563,27 +605,29 @@ router.post('/:id/sections', authMiddleware, (req: AuthRequest, res: Response) =
   }
 })
 
-// Update estimate
+// Update project
 router.put('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const { title, googleSheetUrl } = req.body
     const { id } = req.params
 
-    if (!title || !googleSheetUrl) {
-      return res.status(400).json({ error: 'Название и ссылка на таблицу обязательны' })
+    if (!title) {
+      return res.status(400).json({ error: 'Название проекта обязательно' })
     }
 
-    let googleSheetId: string
-    try {
-      googleSheetId = extractSheetIdFromUrl(googleSheetUrl)
-    } catch (err) {
-      return res.status(400).json({ error: (err as Error).message })
+    let googleSheetId = ''
+    if (googleSheetUrl) {
+      try {
+        googleSheetId = extractSheetIdFromUrl(googleSheetUrl)
+      } catch (err) {
+        return res.status(400).json({ error: (err as Error).message })
+      }
     }
 
     const result = estimateQueries.update.run(googleSheetId, title, id, req.user!.id)
     
     if (result.changes === 0) {
-      return res.status(404).json({ error: 'Смета не найдена' })
+      return res.status(404).json({ error: 'Проект не найден' })
     }
 
     const estimate = estimateQueries.findById.get(id) as EstimateRow
@@ -597,8 +641,8 @@ router.put('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
       createdAt: estimate.created_at,
     })
   } catch (error) {
-    console.error('Update estimate error:', error)
-    res.status(500).json({ error: 'Ошибка обновления сметы' })
+    console.error('Update project error:', error)
+    res.status(500).json({ error: 'Ошибка обновления проекта' })
   }
 })
 
