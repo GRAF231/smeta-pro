@@ -10,6 +10,7 @@ import EstimateEditor from './pages/EstimateEditor'
 import AiEstimateGenerator from './pages/AiEstimateGenerator'
 import CustomerView from './pages/CustomerView'
 import MasterView from './pages/MasterView'
+import MaterialsPage from './pages/MaterialsPage'
 import ProtectedRoute from './components/ProtectedRoute'
 
 function App() {
@@ -58,6 +59,14 @@ function App() {
           element={
             <ProtectedRoute>
               <EstimateEditor />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="estimates/:id/materials"
+          element={
+            <ProtectedRoute>
+              <MaterialsPage />
             </ProtectedRoute>
           }
         />

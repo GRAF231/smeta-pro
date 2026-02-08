@@ -1,4 +1,5 @@
 import https from 'https'
+import http from 'http'
 
 export interface GeneratedEstimateItem {
   name: string
@@ -286,4 +287,242 @@ export async function generateEstimateFromPDF(
   console.log(`[AI] Generated ${estimate.sections.length} sections with ${estimate.sections.reduce((sum, s) => sum + s.items.length, 0)} items`)
 
   return estimate
+}
+
+// ========== PRODUCT PARSING FROM URLs ==========
+
+export interface ParsedProduct {
+  name: string
+  article: string
+  brand: string
+  unit: string
+  price: number
+  description: string
+}
+
+const PRODUCT_PARSE_PROMPT = `Ты — парсер товаров из интернет-магазинов. Твоя задача — извлечь информацию о товаре из HTML-контента веб-страницы.
+
+## Инструкции:
+1. Найди основную информацию о товаре на странице.
+2. Извлеки: название, артикул, бренд/производитель, цену, единицу измерения и описание/характеристики.
+3. Цену бери ЧИСЛОМ без валюты и пробелов. Если указано несколько цен — бери розничную (не оптовую, не со скидкой).
+4. Единицу измерения определи из контекста (шт, м.кв, м.п, упаковка, коробка и т.д.). Если не указано — ставь "шт".
+5. В описание включи основные характеристики товара (размеры, материал, цвет, страна производства и т.д.), кратко.
+
+## ВАЖНО: Ответ СТРОГО в формате JSON без дополнительных текстов. Только валидный JSON.
+
+Формат ответа:
+{
+  "name": "Полное название товара с артикулом",
+  "article": "Артикул",
+  "brand": "Бренд / Производитель",
+  "unit": "шт",
+  "price": 12345.00,
+  "description": "Основные характеристики: размер, материал, цвет и т.д."
+}`
+
+/**
+ * Fetch HTML content from a URL using native http/https modules.
+ */
+function fetchPageHtml(url: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(url)
+    const transport = parsedUrl.protocol === 'https:' ? https : http
+
+    const options = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port,
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+      },
+    }
+
+    const req = transport.request(options, (res) => {
+      // Follow redirects (up to 5)
+      if (res.statusCode && [301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+        const redirectUrl = new URL(res.headers.location, url).toString()
+        fetchPageHtml(redirectUrl).then(resolve).catch(reject)
+        return
+      }
+
+      if (res.statusCode && res.statusCode >= 400) {
+        reject(new Error(`HTTP ${res.statusCode} при загрузке ${url}`))
+        return
+      }
+
+      let data = ''
+      res.setEncoding('utf-8')
+      res.on('data', (chunk) => { data += chunk })
+      res.on('end', () => resolve(data))
+    })
+
+    req.on('error', (err) => reject(new Error(`Ошибка загрузки ${url}: ${err.message}`)))
+    req.setTimeout(30000, () => {
+      req.destroy()
+      reject(new Error(`Таймаут загрузки ${url}`))
+    })
+    req.end()
+  })
+}
+
+/**
+ * Strip HTML to meaningful text content — remove scripts, styles, etc.
+ * Keep only text within body, limit to ~50K chars for AI context.
+ */
+function cleanHtml(html: string): string {
+  // Remove scripts, styles, comments, SVG, noscript
+  let text = html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, '')
+    .replace(/<svg[\s\S]*?<\/svg>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+
+  // Extract body if present
+  const bodyMatch = text.match(/<body[\s\S]*?>([\s\S]*)<\/body>/i)
+  if (bodyMatch) {
+    text = bodyMatch[1]
+  }
+
+  // Remove HTML tags but keep text
+  text = text.replace(/<[^>]+>/g, ' ')
+
+  // Clean whitespace
+  text = text
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#\d+;/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  // Limit to ~50K chars
+  if (text.length > 50000) {
+    text = text.substring(0, 50000)
+  }
+
+  return text
+}
+
+/**
+ * Parse a single product page using AI.
+ */
+async function parseOneProduct(apiKey: string, url: string, htmlText: string): Promise<ParsedProduct> {
+  const requestBodyStr = JSON.stringify({
+    model: 'google/gemini-2.5-flash',
+    messages: [
+      {
+        role: 'system',
+        content: PRODUCT_PARSE_PROMPT,
+      },
+      {
+        role: 'user',
+        content: `URL страницы: ${url}\n\nТекстовое содержимое страницы:\n${htmlText}\n\nИзвлеки данные о товаре. Ответ — только валидный JSON.`,
+      },
+    ],
+    temperature: 0.1,
+    max_tokens: 4000,
+  })
+
+  const requestBodyBuffer = Buffer.from(requestBodyStr, 'utf-8')
+  const responseText = await makeOpenRouterRequest(apiKey, requestBodyBuffer)
+
+  let response: {
+    choices?: Array<{ message?: { content?: string } }>
+    error?: { message?: string }
+  }
+
+  try {
+    response = JSON.parse(responseText)
+  } catch {
+    throw new Error('Не удалось распарсить ответ от OpenRouter API')
+  }
+
+  if (response.error) {
+    throw new Error(`OpenRouter API: ${response.error.message || 'Неизвестная ошибка'}`)
+  }
+
+  const responseContent = response.choices?.[0]?.message?.content
+  if (!responseContent) {
+    throw new Error('ИИ не вернул ответ')
+  }
+
+  let jsonStr = responseContent.trim()
+  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (jsonMatch) {
+    jsonStr = jsonMatch[1].trim()
+  }
+
+  let parsed: ParsedProduct
+  try {
+    const raw = JSON.parse(jsonStr)
+    parsed = {
+      name: String(raw.name || 'Товар'),
+      article: String(raw.article || ''),
+      brand: String(raw.brand || ''),
+      unit: String(raw.unit || 'шт'),
+      price: Math.max(0, Number(raw.price) || 0),
+      description: String(raw.description || ''),
+    }
+  } catch {
+    console.error('[AI] Failed to parse product JSON:', jsonStr.substring(0, 300))
+    throw new Error(`Не удалось извлечь данные товара из ${url}`)
+  }
+
+  return parsed
+}
+
+/**
+ * Parse multiple product URLs using AI.
+ * Returns an array of parsed products (one per URL).
+ */
+export async function parseProductsFromUrls(urls: string[]): Promise<(ParsedProduct & { url: string })[]> {
+  const apiKey = getApiKey()
+  const results: (ParsedProduct & { url: string })[] = []
+
+  for (const url of urls) {
+    try {
+      console.log(`[Parser] Fetching ${url}...`)
+      const html = await fetchPageHtml(url)
+      const cleanedText = cleanHtml(html)
+
+      if (cleanedText.length < 50) {
+        console.warn(`[Parser] Page ${url} has too little content, skipping`)
+        results.push({
+          name: `Не удалось загрузить: ${url}`,
+          article: '',
+          brand: '',
+          unit: 'шт',
+          price: 0,
+          description: 'Страница не содержит достаточно данных',
+          url,
+        })
+        continue
+      }
+
+      console.log(`[Parser] Sending to AI (${cleanedText.length} chars)...`)
+      const product = await parseOneProduct(apiKey, url, cleanedText)
+      results.push({ ...product, url })
+      console.log(`[Parser] Parsed: ${product.name} — ${product.price} руб.`)
+    } catch (err) {
+      console.error(`[Parser] Error parsing ${url}:`, err)
+      results.push({
+        name: `Ошибка парсинга: ${url}`,
+        article: '',
+        brand: '',
+        unit: 'шт',
+        price: 0,
+        description: `Ошибка: ${(err as Error).message}`,
+        url,
+      })
+    }
+  }
+
+  return results
 }

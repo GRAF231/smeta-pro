@@ -156,6 +156,27 @@ function createTables() {
     )
   `)
 
+  // Create estimate_materials table (материалы проекта)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS estimate_materials (
+      id TEXT PRIMARY KEY,
+      estimate_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      article TEXT DEFAULT '',
+      brand TEXT DEFAULT '',
+      unit TEXT DEFAULT 'шт',
+      price REAL DEFAULT 0,
+      quantity REAL DEFAULT 1,
+      total REAL DEFAULT 0,
+      url TEXT DEFAULT '',
+      description TEXT DEFAULT '',
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (estimate_id) REFERENCES estimates(id) ON DELETE CASCADE
+    )
+  `)
+
   // Migration: add master_password column if not exists
   const estimateColumns = db.prepare("PRAGMA table_info(estimates)").all() as { name: string }[]
   if (!estimateColumns.some(col => col.name === 'master_password')) {
@@ -176,6 +197,7 @@ function createTables() {
     CREATE INDEX IF NOT EXISTS idx_version_items_version ON estimate_version_items(version_id);
     CREATE INDEX IF NOT EXISTS idx_version_items_section ON estimate_version_items(version_section_id);
     CREATE INDEX IF NOT EXISTS idx_act_images_estimate ON estimate_act_images(estimate_id);
+    CREATE INDEX IF NOT EXISTS idx_materials_estimate ON estimate_materials(estimate_id);
   `)
 }
 
@@ -293,6 +315,25 @@ export const actImageQueries: Record<string, Statement> = {
     ON CONFLICT(estimate_id, image_type) DO UPDATE SET data = excluded.data
   `),
   delete: db.prepare('DELETE FROM estimate_act_images WHERE estimate_id = ? AND image_type = ?'),
+}
+
+// Material queries
+export const materialQueries: Record<string, Statement> = {
+  findByEstimateId: db.prepare('SELECT * FROM estimate_materials WHERE estimate_id = ? ORDER BY sort_order'),
+  findById: db.prepare('SELECT * FROM estimate_materials WHERE id = ?'),
+  create: db.prepare(`
+    INSERT INTO estimate_materials (id, estimate_id, name, article, brand, unit, price, quantity, total, url, description, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `),
+  update: db.prepare(`
+    UPDATE estimate_materials SET
+      name = ?, article = ?, brand = ?, unit = ?, price = ?, quantity = ?, total = ?,
+      url = ?, description = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `),
+  delete: db.prepare('DELETE FROM estimate_materials WHERE id = ?'),
+  deleteByEstimateId: db.prepare('DELETE FROM estimate_materials WHERE estimate_id = ?'),
+  getMaxSortOrder: db.prepare('SELECT COALESCE(MAX(sort_order), 0) as max_order FROM estimate_materials WHERE estimate_id = ?'),
 }
 
 // Version item queries

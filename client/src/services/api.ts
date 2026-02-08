@@ -160,3 +160,53 @@ export const estimatesApi = {
       timeout: 360000, // 6 minutes for large PDF AI generation
     }),
 }
+
+// Materials
+export interface Material {
+  id: string
+  estimateId: string
+  name: string
+  article: string
+  brand: string
+  unit: string
+  price: number
+  quantity: number
+  total: number
+  url: string
+  description: string
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MaterialRefreshResult {
+  message: string
+  updated: number
+  materials: Material[]
+}
+
+export const materialsApi = {
+  getAll: (estimateId: string) =>
+    api.get<Material[]>(`/estimates/${estimateId}/materials`),
+
+  parse: (estimateId: string, urls: string[]) =>
+    api.post<Material[]>(`/estimates/${estimateId}/materials/parse`, { urls }, {
+      timeout: 300000, // 5 minutes for AI parsing
+    }),
+
+  update: (estimateId: string, materialId: string, data: Partial<Material>) =>
+    api.put<Material>(`/estimates/${estimateId}/materials/${materialId}`, data),
+
+  delete: (estimateId: string, materialId: string) =>
+    api.delete(`/estimates/${estimateId}/materials/${materialId}`),
+
+  refreshAll: (estimateId: string) =>
+    api.post<MaterialRefreshResult>(`/estimates/${estimateId}/materials/refresh`, {}, {
+      timeout: 300000,
+    }),
+
+  refreshOne: (estimateId: string, materialId: string) =>
+    api.post<Material>(`/estimates/${estimateId}/materials/refresh/${materialId}`, {}, {
+      timeout: 60000,
+    }),
+}

@@ -5,6 +5,7 @@ import dotenv from 'dotenv'
 import { initDatabase } from './models/database'
 import authRoutes from './routes/auth'
 import estimatesRoutes from './routes/estimates'
+import materialsRoutes from './routes/materials'
 
 dotenv.config()
 
@@ -22,6 +23,7 @@ initDatabase()
 // API Routes
 app.use('/api/auth', authRoutes)
 app.use('/api/estimates', estimatesRoutes)
+app.use('/api/estimates/:estimateId/materials', materialsRoutes)
 
 // Health check
 app.get('/api/health', (req, res) => {
