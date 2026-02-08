@@ -138,37 +138,49 @@ router.post('/generate', authMiddleware, upload.single('pdf'), async (req: AuthR
       return res.status(400).json({ error: (err as Error).message })
     }
 
-    // Step 1: Convert PDF pages to images (PNG → JPEG for smaller size)
+    // Step 1: Convert PDF pages to images using a single parser instance
     let pageDataUrls: string[]
+    const parser = new PDFParse({ data: new Uint8Array(pdfFile.buffer) })
     try {
-      const parser = new PDFParse({ data: new Uint8Array(pdfFile.buffer) })
+      // Render all pages at once (pdf-parse handles internally)
+      // Use low resolution to save memory on small servers
       const screenshotResult = await parser.getScreenshot({
         imageDataUrl: false,
         imageBuffer: true,
-        desiredWidth: 800, // reduced width for smaller payload
+        desiredWidth: 800,
       })
-      await parser.destroy()
 
+      const totalPages = screenshotResult.total
       if (!screenshotResult.pages || screenshotResult.pages.length === 0) {
         return res.status(400).json({ 
           error: 'Не удалось обработать PDF. Убедитесь, что файл не поврежден.' 
         })
       }
 
-      // Convert PNG buffers to JPEG with compression via sharp
-      const jpegPromises = screenshotResult.pages.map(async (page) => {
+      console.log(`[PDF] Got ${screenshotResult.pages.length} of ${totalPages} pages, converting to JPEG...`)
+
+      // Convert PNG buffers to JPEG sequentially to save memory
+      pageDataUrls = []
+      for (let i = 0; i < screenshotResult.pages.length; i++) {
+        const page = screenshotResult.pages[i]
         const jpegBuffer = await sharp(Buffer.from(page.data))
-          .jpeg({ quality: 70 })
+          .jpeg({ quality: 65 })
           .toBuffer()
-        return `data:image/jpeg;base64,${jpegBuffer.toString('base64')}`
-      })
-      pageDataUrls = await Promise.all(jpegPromises)
+        pageDataUrls.push(`data:image/jpeg;base64,${jpegBuffer.toString('base64')}`)
+        // Free the original PNG data to save memory
+        ;(page as any).data = null
+        if ((i + 1) % 10 === 0) {
+          console.log(`[PDF] Converted ${i + 1}/${screenshotResult.pages.length} pages to JPEG`)
+        }
+      }
 
       const totalSizeMB = pageDataUrls.reduce((sum, url) => sum + url.length, 0) / (1024 * 1024)
       console.log(`[PDF] Converted ${pageDataUrls.length} pages to JPEG (total ~${totalSizeMB.toFixed(1)} MB base64)`)
     } catch (err) {
       console.error('PDF screenshot error:', err)
       return res.status(400).json({ error: 'Ошибка обработки PDF файла. Убедитесь, что файл не поврежден.' })
+    } finally {
+      await parser.destroy().catch(() => {})
     }
 
     // Step 2: Fetch pricelist from Google Sheets
