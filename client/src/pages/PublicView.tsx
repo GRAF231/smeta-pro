@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { projectsApi, EstimateData } from '../services/api'
 import EstimateTable from '../components/EstimateTable'
+import Spinner from '../components/ui/Spinner'
 
 export default function PublicView() {
   const { token } = useParams<{ token: string }>()
@@ -65,7 +66,7 @@ export default function PublicView() {
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-900">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+        <Spinner size="lg" />
       </div>
     )
   }
@@ -131,7 +132,7 @@ export default function PublicView() {
             >
               {isVerifying ? (
                 <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
+                  <Spinner size="sm" className="border-white" />
                   Проверка...
                 </>
               ) : (

@@ -1,11 +1,16 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { materialsApi, Material, projectsApi, Project } from '../services/api'
 import MaterialsPdfGenerator from '../components/MaterialsPdfGenerator'
+import { PageSpinner } from '../components/ui/Spinner'
+import ErrorAlert from '../components/ui/ErrorAlert'
+import Spinner from '../components/ui/Spinner'
+import BackButton from '../components/ui/BackButton'
+import Modal from '../components/ui/Modal'
+import { formatMoney } from '../utils/format'
 
 export default function MaterialsPage() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
 
   const [project, setProject] = useState<Project | null>(null)
   const [materials, setMaterials] = useState<Material[]>([])
@@ -145,19 +150,10 @@ export default function MaterialsPage() {
     }
   }
 
-  const formatNumber = (num: number) => new Intl.NumberFormat('ru-RU', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(num)
-
   const grandTotal = materials.reduce((sum, m) => sum + m.total, 0)
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
-      </div>
-    )
+    return <PageSpinner />
   }
 
   if (!project) {
@@ -173,15 +169,7 @@ export default function MaterialsPage() {
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8">
         <div>
-          <button
-            onClick={() => navigate(`/projects/${id}/edit`)}
-            className="text-slate-400 hover:text-white mb-2 flex items-center gap-1"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Назад к проекту
-          </button>
+          <BackButton to={`/projects/${id}/edit`} label="Назад к проекту" />
           <h1 className="font-display text-2xl font-bold text-white">
             Материалы: {project.title}
           </h1>
@@ -223,19 +211,14 @@ export default function MaterialsPage() {
         </div>
       </div>
 
-      {error && (
-        <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400">
-          {error}
-          <button onClick={() => setError('')} className="ml-4 text-red-300">✕</button>
-        </div>
-      )}
+      <ErrorAlert message={error} onClose={() => setError('')} />
 
       {/* Total */}
       {materials.length > 0 && (
         <div className="card bg-gradient-to-r from-primary-500/20 to-primary-600/10 border-primary-500/30 mb-6">
           <div className="flex items-center justify-between">
             <p className="text-sm text-slate-400">Итого за все материалы</p>
-            <p className="font-display text-2xl font-bold text-primary-400">{formatNumber(grandTotal)} ₽</p>
+            <p className="font-display text-2xl font-bold text-primary-400">{formatMoney(grandTotal)} ₽</p>
           </div>
         </div>
       )}
@@ -335,7 +318,7 @@ export default function MaterialsPage() {
                         />
                       </td>
                       <td className="px-2 sm:px-3 py-2 text-right text-primary-300 font-medium">
-                        {formatNumber((editingData.price ?? material.price) * (editingData.quantity ?? material.quantity))}
+                        {formatMoney((editingData.price ?? material.price) * (editingData.quantity ?? material.quantity))}
                       </td>
                       <td className="px-2 sm:px-3 py-2">
                         <div className="flex gap-1 justify-end">
@@ -388,9 +371,9 @@ export default function MaterialsPage() {
                       <td className="px-2 sm:px-3 py-2 text-slate-400 text-xs">{material.article}</td>
                       <td className="px-2 sm:px-3 py-2 text-slate-400 text-xs">{material.brand}</td>
                       <td className="px-2 sm:px-3 py-2 text-slate-400">{material.unit}</td>
-                      <td className="px-2 sm:px-3 py-2 text-right text-primary-400">{formatNumber(material.price)}</td>
+                      <td className="px-2 sm:px-3 py-2 text-right text-primary-400">{formatMoney(material.price)}</td>
                       <td className="px-2 sm:px-3 py-2 text-right text-slate-300">{material.quantity}</td>
-                      <td className="px-2 sm:px-3 py-2 text-right font-medium text-primary-300">{formatNumber(material.total)}</td>
+                      <td className="px-2 sm:px-3 py-2 text-right font-medium text-primary-300">{formatMoney(material.total)}</td>
                       <td className="px-2 sm:px-3 py-2" onClick={e => e.stopPropagation()}>
                         <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                           {material.url && (
@@ -426,7 +409,7 @@ export default function MaterialsPage() {
                     Итого:
                   </td>
                   <td className="px-2 sm:px-3 py-3 text-right font-display font-bold text-primary-400 text-base">
-                    {formatNumber(grandTotal)} ₽
+                    {formatMoney(grandTotal)} ₽
                   </td>
                   <td></td>
                 </tr>
@@ -438,48 +421,12 @@ export default function MaterialsPage() {
 
       {/* Add URLs Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-slate-800 rounded-2xl border border-slate-700 w-full max-w-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
-              <h2 className="font-display text-xl font-bold text-white">Добавить материалы</h2>
-              <button
-                onClick={() => { setShowAddModal(false); setParseProgress('') }}
-                className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
-                disabled={isParsing}
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="label">
-                  Ссылки на товары (по одной на строку)
-                </label>
-                <textarea
-                  value={urlsInput}
-                  onChange={e => setUrlsInput(e.target.value)}
-                  placeholder={`https://example.com/product-1\nhttps://example.com/product-2\nhttps://example.com/product-3`}
-                  className="input-field min-h-[200px] font-mono text-sm"
-                  rows={8}
-                  disabled={isParsing}
-                />
-                <p className="text-xs text-slate-500 mt-2">
-                  Вставьте ссылки на страницы товаров интернет-магазинов. ИИ автоматически извлечёт название, цену, артикул и характеристики.
-                </p>
-              </div>
-
-              {parseProgress && (
-                <div className="flex items-center gap-3 p-4 bg-primary-500/10 border border-primary-500/20 rounded-xl">
-                  <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-primary-500 flex-shrink-0"></div>
-                  <span className="text-sm text-primary-300">{parseProgress}</span>
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center justify-end px-6 py-4 border-t border-slate-700 gap-3">
+        <Modal
+          title="Добавить материалы"
+          maxWidth="max-w-2xl"
+          onClose={() => { setShowAddModal(false); setParseProgress('') }}
+          footer={
+            <div className="flex items-center gap-3">
               <button
                 onClick={() => { setShowAddModal(false); setParseProgress('') }}
                 className="btn-secondary"
@@ -494,7 +441,7 @@ export default function MaterialsPage() {
               >
                 {isParsing ? (
                   <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
+                    <Spinner size="sm" className="border-white" />
                     Парсинг...
                   </>
                 ) : (
@@ -507,8 +454,34 @@ export default function MaterialsPage() {
                 )}
               </button>
             </div>
+          }
+        >
+          <div className="space-y-4">
+            <div>
+              <label className="label">
+                Ссылки на товары (по одной на строку)
+              </label>
+              <textarea
+                value={urlsInput}
+                onChange={e => setUrlsInput(e.target.value)}
+                placeholder={`https://example.com/product-1\nhttps://example.com/product-2\nhttps://example.com/product-3`}
+                className="input-field min-h-[200px] font-mono text-sm"
+                rows={8}
+                disabled={isParsing}
+              />
+              <p className="text-xs text-slate-500 mt-2">
+                Вставьте ссылки на страницы товаров интернет-магазинов. ИИ автоматически извлечёт название, цену, артикул и характеристики.
+              </p>
+            </div>
+
+            {parseProgress && (
+              <div className="flex items-center gap-3 p-4 bg-primary-500/10 border border-primary-500/20 rounded-xl">
+                <Spinner size="sm" className="flex-shrink-0" />
+                <span className="text-sm text-primary-300">{parseProgress}</span>
+              </div>
+            )}
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* PDF Generator Modal */}
