@@ -1,30 +1,31 @@
 import { useState } from 'react'
-import type { EstimateSection, EstimateItem, EstimateView } from '../../types'
+import type { EstimateSection, EstimateItem, EstimateView, ViewId, ItemId, SectionId } from '../../types'
 import { formatNumber } from '../../utils/format'
 import { IconCheck, IconClose, IconTrash, IconPlus } from '../../components/ui/Icons'
+import { asSectionId, asItemId } from '../../types'
 
 interface SectionCardProps {
   section: EstimateSection
-  activeViewId: string | null
+  activeViewId: ViewId | null
   activeView: EstimateView | null
-  editingItem: string | null
+  editingItem: ItemId | null
   editingData: { name?: string; unit?: string; quantity?: number; price?: number }
-  newItemSection: string | null
-  editingSectionId: string | null
+  newItemSection: SectionId | null
+  editingSectionId: SectionId | null
   editingSectionName: string
-  onEditingSectionIdChange: (id: string | null) => void
+  onEditingSectionIdChange: (id: SectionId | null) => void
   onEditingSectionNameChange: (name: string) => void
   onRenameSectionSave: (section: EstimateSection) => void
-  onSectionVisibilityChange: (sectionId: string, currentVisible: boolean) => void
-  onDeleteSection: (sectionId: string, sectionName: string) => void
-  onItemVisibilityChange: (sectionId: string, item: EstimateItem) => void
+  onSectionVisibilityChange: (sectionId: SectionId, currentVisible: boolean) => void
+  onDeleteSection: (sectionId: SectionId, sectionName: string) => void
+  onItemVisibilityChange: (sectionId: SectionId, item: EstimateItem) => void
   onStartEditing: (item: EstimateItem) => void
   onCancelEditing: () => void
-  onSaveEditing: (sectionId: string, item: EstimateItem) => void
+  onSaveEditing: (sectionId: SectionId, item: EstimateItem) => void
   onEditingDataChange: (data: { name?: string; unit?: string; quantity?: number; price?: number }) => void
-  onDeleteItem: (sectionId: string, itemId: string) => void
-  onAddItem: (sectionId: string, name: string, unit: string, quantity: number) => void
-  onNewItemSectionChange: (sectionId: string | null) => void
+  onDeleteItem: (sectionId: SectionId, itemId: ItemId) => void
+  onAddItem: (sectionId: SectionId, name: string, unit: string, quantity: number) => void
+  onNewItemSectionChange: (sectionId: SectionId | null) => void
 }
 
 export default function SectionCard({
@@ -42,7 +43,7 @@ export default function SectionCard({
     <div className={`card overflow-hidden ${!sectionVisible ? 'opacity-50' : ''}`}>
       {/* Section header */}
       <div className="flex items-center justify-between -mx-3 sm:-mx-6 -mt-3 sm:-mt-6 mb-3 sm:mb-4 px-3 sm:px-6 py-3 sm:py-4 bg-slate-700/30 border-b border-slate-700/50">
-        {editingSectionId === section.id ? (
+        {editingSectionId === asSectionId(section.id) ? (
           <div className="flex items-center gap-2 flex-1 mr-3">
             <input
               type="text"
@@ -65,7 +66,7 @@ export default function SectionCard({
         ) : (
           <h2
             className="font-display font-semibold text-lg text-white cursor-pointer hover:text-primary-300 transition-colors"
-            onClick={() => { onEditingSectionIdChange(section.id); onEditingSectionNameChange(section.name) }}
+            onClick={() => { onEditingSectionIdChange(asSectionId(section.id)); onEditingSectionNameChange(section.name) }}
             title="Нажмите для переименования"
           >
             {section.name}
@@ -74,7 +75,7 @@ export default function SectionCard({
         <div className="flex items-center gap-2">
           {activeViewId && (
             <button
-              onClick={() => onSectionVisibilityChange(section.id, sectionVisible)}
+              onClick={() => onSectionVisibilityChange(asSectionId(section.id), sectionVisible)}
               className={`px-3 py-1.5 rounded text-xs font-medium transition-all ${
                 sectionVisible
                   ? 'bg-primary-500/30 text-primary-400 border border-primary-500/50'
@@ -86,7 +87,7 @@ export default function SectionCard({
             </button>
           )}
           <button
-            onClick={() => onDeleteSection(section.id, section.name)}
+            onClick={() => onDeleteSection(asSectionId(section.id), section.name)}
             className="w-8 h-8 rounded flex items-center justify-center text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all"
             title="Удалить раздел"
           >
@@ -116,7 +117,7 @@ export default function SectionCard({
               const itemPrice = vs?.price ?? 0
               const itemTotal = vs?.total ?? 0
 
-              return editingItem === item.id ? (
+              return editingItem === asItemId(item.id) ? (
                 <EditingItemRow
                   key={item.id}
                   item={item}
@@ -124,9 +125,9 @@ export default function SectionCard({
                   itemVisible={itemVisible}
                   itemPrice={itemPrice}
                   editingData={editingData}
-                  onVisibilityChange={() => onItemVisibilityChange(section.id, item)}
+                  onVisibilityChange={() => onItemVisibilityChange(asSectionId(section.id), item)}
                   onEditingDataChange={onEditingDataChange}
-                  onSave={() => onSaveEditing(section.id, item)}
+                  onSave={() => onSaveEditing(asSectionId(section.id), item)}
                   onCancel={onCancelEditing}
                 />
               ) : (
@@ -137,23 +138,23 @@ export default function SectionCard({
                   itemVisible={itemVisible}
                   itemPrice={itemPrice}
                   itemTotal={itemTotal}
-                  onVisibilityChange={() => onItemVisibilityChange(section.id, item)}
+                  onVisibilityChange={() => onItemVisibilityChange(asSectionId(section.id), item)}
                   onStartEditing={() => onStartEditing(item)}
-                  onDelete={() => onDeleteItem(section.id, item.id)}
+                  onDelete={() => onDeleteItem(asSectionId(section.id), asItemId(item.id))}
                 />
               )
             })}
 
             {/* Add new item row */}
-            {newItemSection === section.id ? (
+            {newItemSection === asSectionId(section.id) ? (
               <NewItemRow
-                onSave={(name, unit, qty) => onAddItem(section.id, name, unit, qty)}
+                onSave={(name, unit, qty) => onAddItem(asSectionId(section.id), name, unit, qty)}
                 onCancel={() => onNewItemSectionChange(null)}
               />
             ) : (
               <tr>
                 <td colSpan={7} className="px-3 py-2">
-                  <button onClick={() => onNewItemSectionChange(section.id)} className="text-sm text-slate-500 hover:text-primary-400 flex items-center gap-1">
+                  <button onClick={() => onNewItemSectionChange(asSectionId(section.id))} className="text-sm text-slate-500 hover:text-primary-400 flex items-center gap-1">
                     <IconPlus className="w-4 h-4" />
                     Добавить позицию
                   </button>

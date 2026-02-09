@@ -2,8 +2,15 @@ import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 
 /**
- * Scan the canvas near `targetY` (±searchRange) and return the Y coordinate
- * of the row that is closest to pure white — i.e. a gap between lines of text.
+ * Find the best Y coordinate for page split near target position
+ * 
+ * Scans the canvas near targetY (±searchRange) to find the row closest to pure white
+ * (a gap between lines of text). This helps avoid splitting pages through text.
+ * 
+ * @param canvas - HTML canvas element to scan
+ * @param targetY - Target Y coordinate for split
+ * @param searchRange - Range in pixels to search above and below targetY
+ * @returns Y coordinate of the best split point (closest to white)
  */
 function findBestSplitY(canvas: HTMLCanvasElement, targetY: number, searchRange: number): number {
   const ctx = canvas.getContext('2d')!
@@ -31,9 +38,25 @@ function findBestSplitY(canvas: HTMLCanvasElement, targetY: number, searchRange:
 }
 
 /**
- * Render an HTML element to a multi-page A4 PDF and trigger download.
- * Uses html2canvas for rendering and jsPDF for PDF generation.
- * Pages are split at white-space gaps to avoid cutting through text.
+ * Render an HTML element to a multi-page A4 PDF and trigger download
+ * 
+ * Converts an HTML element to PDF using html2canvas for rendering and jsPDF for PDF generation.
+ * Automatically splits content across multiple A4 pages, finding optimal split points
+ * at white-space gaps to avoid cutting through text.
+ * 
+ * @param element - HTML element to convert to PDF
+ * @param filename - Filename for the downloaded PDF (e.g., 'document.pdf')
+ * @returns Promise that resolves when PDF is generated and download starts
+ * 
+ * @example
+ * ```tsx
+ * const handleDownload = async () => {
+ *   const element = document.getElementById('document-content')
+ *   if (element) {
+ *     await renderToPdf(element, 'act-2024-01.pdf')
+ *   }
+ * }
+ * ```
  */
 export async function renderToPdf(element: HTMLElement, filename: string): Promise<void> {
   const scale = 2

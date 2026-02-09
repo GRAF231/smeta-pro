@@ -1,16 +1,48 @@
 import { ReactNode } from 'react'
 import { IconClose } from './Icons'
 
+/**
+ * Props for Modal component
+ */
 interface ModalProps {
+  /** Modal title displayed in header */
   title: string
+  /** Callback function called when modal is closed */
   onClose: () => void
+  /** Modal content */
   children: ReactNode
-  /** Max width CSS class, e.g. "max-w-4xl" or "max-w-2xl" */
+  /** Max width CSS class, e.g. "max-w-4xl" or "max-w-2xl" (default: "max-w-4xl") */
   maxWidth?: string
-  /** Optional footer content */
+  /** Optional footer content (buttons, actions, etc.) */
   footer?: ReactNode
 }
 
+/**
+ * Modal dialog component with backdrop, header, body, and optional footer
+ * 
+ * Provides a centered modal overlay with:
+ * - Backdrop blur effect
+ * - Close button in header
+ * - Scrollable content area
+ * - Optional footer section
+ * 
+ * @example
+ * ```tsx
+ * <Modal
+ *   title="Create Project"
+ *   onClose={() => setIsOpen(false)}
+ *   maxWidth="max-w-2xl"
+ *   footer={
+ *     <div className="flex gap-2">
+ *       <Button onClick={handleSave}>Save</Button>
+ *       <Button variant="secondary" onClick={() => setIsOpen(false)}>Cancel</Button>
+ *     </div>
+ *   }
+ * >
+ *   <ProjectForm onSubmit={handleSubmit} />
+ * </Modal>
+ * ```
+ */
 export default function Modal({ title, onClose, children, maxWidth = 'max-w-4xl', footer }: ModalProps) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">

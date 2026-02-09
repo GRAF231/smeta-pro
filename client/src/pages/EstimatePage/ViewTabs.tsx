@@ -1,16 +1,17 @@
 import { useState } from 'react'
-import type { EstimateView } from '../../types'
+import type { EstimateView, ViewId } from '../../types'
 import { formatNumber } from '../../utils/format'
 import { IconPlus, IconDuplicate, IconClose, IconCheck } from '../../components/ui/Icons'
+import { asViewId } from '../../types'
 
 interface ViewTabsProps {
   views: EstimateView[]
-  activeViewId: string | null
+  activeViewId: ViewId | null
   totals: Record<string, number>
-  onSelectView: (viewId: string) => void
+  onSelectView: (viewId: ViewId) => void
   onAddView: (name: string) => Promise<void>
-  onDuplicateView: (viewId: string) => void
-  onDeleteView: (viewId: string) => void
+  onDuplicateView: (viewId: ViewId) => void
+  onDeleteView: (viewId: ViewId) => void
 }
 
 export default function ViewTabs({
@@ -33,7 +34,7 @@ export default function ViewTabs({
         {views.map(view => (
           <div key={view.id} className="flex items-center group">
             <button
-              onClick={() => onSelectView(view.id)}
+              onClick={() => onSelectView(asViewId(view.id))}
               className={`px-4 py-2.5 rounded-t-xl text-sm font-medium whitespace-nowrap transition-all ${
                 activeViewId === view.id
                   ? 'bg-slate-700/60 text-white border border-b-0 border-slate-600/50'
@@ -48,7 +49,7 @@ export default function ViewTabs({
             {activeViewId === view.id && (
               <>
                 <button
-                  onClick={() => onDuplicateView(view.id)}
+                  onClick={() => onDuplicateView(asViewId(view.id))}
                   className="ml-0.5 p-1 text-slate-500 hover:text-primary-400 opacity-0 group-hover:opacity-100 transition-opacity"
                   title="Дублировать"
                 >
@@ -56,7 +57,7 @@ export default function ViewTabs({
                 </button>
                 {views.length > 1 && (
                   <button
-                    onClick={() => onDeleteView(view.id)}
+                    onClick={() => onDeleteView(asViewId(view.id))}
                     className="p-1 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
                     title="Удалить"
                   >

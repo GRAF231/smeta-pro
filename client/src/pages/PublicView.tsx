@@ -1,9 +1,22 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { projectsApi, EstimateData } from '../services/api'
+import { projectsApi } from '../services/api'
+import type { EstimateData } from '../types'
 import EstimateTable from '../components/EstimateTable'
 import Spinner from '../components/ui/Spinner'
 
+/**
+ * Public view page component
+ * 
+ * Displays estimate data for public access via token.
+ * Supports password-protected views with password verification.
+ * 
+ * @example
+ * Used as a route in App.tsx:
+ * ```tsx
+ * <Route path="/v/:token" element={<PublicView />} />
+ * ```
+ */
 export default function PublicView() {
   const { token } = useParams<{ token: string }>()
   const [data, setData] = useState<EstimateData | null>(null)

@@ -1,6 +1,25 @@
 import { Outlet, Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
+/**
+ * Main layout component for the application
+ * 
+ * Provides the common structure for all pages including:
+ * - Header with navigation and user menu
+ * - Main content area (via Outlet)
+ * - Footer
+ * 
+ * Handles authentication state and logout functionality.
+ * 
+ * @example
+ * Used as a route wrapper in App.tsx:
+ * ```tsx
+ * <Route path="/" element={<Layout />}>
+ *   <Route index element={<Home />} />
+ *   <Route path="dashboard" element={<Dashboard />} />
+ * </Route>
+ * ```
+ */
 export default function Layout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()

@@ -1,11 +1,24 @@
+/**
+ * Formatting utility functions
+ * 
+ * Provides functions for formatting numbers, dates, and currency
+ * according to Russian locale conventions.
+ */
+
+/**
+ * Russian month names in genitive case (for dates)
+ */
 const MONTH_NAMES_RU = [
   'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
   'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
-]
+] as const satisfies readonly string[]
 
 /**
  * Format number with Russian locale (space as thousands separator).
- * Example: 1234567 → "1 234 567"
+ * @param num - Number to format
+ * @returns Formatted number string
+ * @example
+ * formatNumber(1234567) // "1 234 567"
  */
 export function formatNumber(num: number): string {
   return new Intl.NumberFormat('ru-RU').format(num)
@@ -13,7 +26,10 @@ export function formatNumber(num: number): string {
 
 /**
  * Format number as money with 2 decimal places.
- * Example: 1234.5 → "1 234,50"
+ * @param num - Number to format
+ * @returns Formatted money string
+ * @example
+ * formatMoney(1234.5) // "1 234,50"
  */
 export function formatMoney(num: number): string {
   return new Intl.NumberFormat('ru-RU', {
@@ -24,7 +40,10 @@ export function formatMoney(num: number): string {
 
 /**
  * Format ISO date string to Russian date with month name.
- * Example: "2026-02-09" → "09 февраля 2026 г."
+ * @param dateStr - ISO date string (YYYY-MM-DD)
+ * @returns Formatted date string
+ * @example
+ * formatDateRu("2026-02-09") // "09 февраля 2026 г."
  */
 export function formatDateRu(dateStr: string): string {
   const date = new Date(dateStr + 'T00:00:00')
@@ -36,7 +55,10 @@ export function formatDateRu(dateStr: string): string {
 
 /**
  * Format ISO date string to short Russian date.
- * Example: "2026-02-09" → "09.02.2026"
+ * @param dateStr - ISO date string (YYYY-MM-DD)
+ * @returns Formatted date string
+ * @example
+ * formatDateShortRu("2026-02-09") // "09.02.2026"
  */
 export function formatDateShortRu(dateStr: string): string {
   const date = new Date(dateStr + 'T00:00:00')

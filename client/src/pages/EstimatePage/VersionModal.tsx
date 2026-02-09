@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { projectsApi } from '../../services/api'
-import type { EstimateVersion, EstimateVersionWithSections } from '../../types'
+import type { EstimateVersion, EstimateVersionWithSections, ProjectId } from '../../types'
 import Spinner from '../../components/ui/Spinner'
 import { IconBack, IconSync, IconClock, IconChevronRight } from '../../components/ui/Icons'
+import { asVersionId } from '../../types'
 
 interface VersionModalProps {
-  projectId: string
+  projectId: ProjectId
   onClose: () => void
   onRestored: () => Promise<void>
   onError: (msg: string) => void
@@ -51,7 +52,7 @@ export default function VersionModal({ projectId, onClose, onRestored, onError }
 
   const handleSelectVersion = async (versionId: string) => {
     try {
-      const res = await projectsApi.getVersion(projectId, versionId)
+      const res = await projectsApi.getVersion(projectId, asVersionId(versionId))
       setSelectedVersion(res.data)
     } catch {
       onError('Ошибка загрузки версии')
@@ -64,7 +65,7 @@ export default function VersionModal({ projectId, onClose, onRestored, onError }
 
     setIsRestoringVersion(true)
     try {
-      await projectsApi.restoreVersion(projectId, selectedVersion.id)
+      await projectsApi.restoreVersion(projectId, asVersionId(selectedVersion.id))
       await onRestored()
       onClose()
     } catch {

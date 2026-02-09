@@ -1,9 +1,37 @@
+/**
+ * Props for ErrorAlert component
+ */
 interface ErrorAlertProps {
+  /** Error message to display */
   message: string
+  /** Optional callback function called when close button is clicked */
   onClose?: () => void
+  /** Additional CSS classes */
   className?: string
 }
 
+/**
+ * Error alert component for displaying error messages
+ * 
+ * Displays error message in a styled alert box with:
+ * - Red-themed error styling
+ * - Optional close button
+ * - Automatic hiding when message is empty
+ * - Consistent error appearance across the app
+ * 
+ * @example
+ * ```tsx
+ * // Basic error alert
+ * <ErrorAlert message={error} />
+ * 
+ * // With close button
+ * <ErrorAlert
+ *   message={error}
+ *   onClose={() => setError('')}
+ *   className="mb-4"
+ * />
+ * ```
+ */
 export default function ErrorAlert({ message, onClose, className = '' }: ErrorAlertProps) {
   if (!message) return null
 

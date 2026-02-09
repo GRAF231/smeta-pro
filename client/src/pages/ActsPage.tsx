@@ -1,74 +1,92 @@
-import { useState, useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { projectsApi, SavedAct, SavedActDetail } from '../services/api'
+import type { SavedActDetail, ActId } from '../types'
+import { useProject } from '../hooks/useProject'
+import { useActs } from '../hooks/api/useActs'
+import { useErrorHandler } from '../hooks/useErrorHandler'
+import { getProjectIdFromParams } from '../utils/params'
+import { asActId } from '../types'
 import { formatMoney } from '../utils/format'
 import { renderToPdf } from '../utils/pdfGenerator'
 import { PageSpinner } from '../components/ui/Spinner'
-import ErrorAlert from '../components/ui/ErrorAlert'
+import { useToast } from '../components/ui/ToastContainer'
 import BackButton from '../components/ui/BackButton'
 import { IconPlus, IconBack, IconDownload, IconEye, IconTrash, IconDocument } from '../components/ui/Icons'
 import ActDocumentTemplate, { ActLine } from '../components/ActGenerator/ActDocumentTemplate'
 
+/**
+ * Acts page component
+ * 
+ * Displays list of saved acts of completed work for a project.
+ * Provides functionality to:
+ * - View list of all acts
+ * - Create new acts
+ * - View act details
+ * - Download acts as PDF
+ * - Delete acts
+ * 
+ * @example
+ * Used as a route in App.tsx:
+ * ```tsx
+ * <Route path="projects/:id/acts" element={<ActsPage />} />
+ * ```
+ */
 export default function ActsPage() {
-  const { id } = useParams<{ id: string }>()
+  const params = useParams<{ id: string }>()
+  const id = getProjectIdFromParams(params)
   const navigate = useNavigate()
+  const { isLoading: isProjectLoading, error: projectError, setError: setProjectError } = useProject(id)
+  const {
+    acts,
+    selectedAct,
+    images,
+    isLoading: isLoadingActs,
+    error,
+    loadActs,
+    loadAct,
+    loadImages,
+    deleteAct,
+    setSelectedAct,
+    setError,
+  } = useActs(id)
+  const { handleError } = useErrorHandler()
+  const { showError } = useToast()
 
-  const [acts, setActs] = useState<SavedAct[]>([])
-  const [selectedAct, setSelectedAct] = useState<SavedActDetail | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [images, setImages] = useState<Record<string, string>>({})
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
-
   const actRef = useRef<HTMLDivElement>(null)
 
+  // Load acts and images on mount
   useEffect(() => {
     if (id) {
       loadActs()
       loadImages()
     }
-  }, [id])
+  }, [id, loadActs, loadImages])
 
-  const loadActs = async () => {
-    if (!id) return
-    setIsLoading(true)
+  // Show error toast when error changes
+  useEffect(() => {
+    const combinedError = error || projectError
+    if (combinedError) {
+      showError(combinedError)
+      if (error) setError('')
+      if (projectError) setProjectError('')
+    }
+  }, [error, projectError, showError, setError, setProjectError])
+
+  const handleSelectAct = async (actId: ActId) => {
     try {
-      const res = await projectsApi.getActs(id)
-      setActs(res.data)
+      await loadAct(actId)
     } catch {
-      setError('Ошибка загрузки актов')
-    } finally {
-      setIsLoading(false)
+      // Error is handled by hook
     }
   }
 
-  const loadImages = async () => {
-    if (!id) return
-    try {
-      const res = await projectsApi.getActImages(id)
-      setImages(res.data)
-    } catch { /* ok */ }
-  }
-
-  const handleSelectAct = async (actId: string) => {
-    if (!id) return
-    try {
-      const res = await projectsApi.getAct(id, actId)
-      setSelectedAct(res.data)
-    } catch {
-      setError('Ошибка загрузки акта')
-    }
-  }
-
-  const handleDeleteAct = async (actId: string) => {
-    if (!id) return
+  const handleDeleteAct = async (actId: ActId) => {
     if (!confirm('Удалить этот акт из истории?')) return
     try {
-      await projectsApi.deleteAct(id, actId)
-      setActs(acts.filter(a => a.id !== actId))
-      if (selectedAct?.id === actId) setSelectedAct(null)
+      await deleteAct(actId)
     } catch {
-      setError('Ошибка удаления акта')
+      // Error is handled by hook
     }
   }
 
@@ -78,8 +96,7 @@ export default function ActsPage() {
     try {
       await renderToPdf(actRef.current, `Акт_${selectedAct.actNumber || 'б-н'}_${selectedAct.actDate}.pdf`)
     } catch (err) {
-      console.error('PDF generation error:', err)
-      alert('Ошибка при создании PDF')
+      handleError(err, 'Ошибка при создании PDF')
     } finally {
       setIsGeneratingPdf(false)
     }
@@ -106,7 +123,7 @@ export default function ActsPage() {
     }))
   }
 
-  if (isLoading) return <PageSpinner />
+  if (isProjectLoading || isLoadingActs) return <PageSpinner />
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -138,8 +155,6 @@ export default function ActsPage() {
           )}
         </div>
       </div>
-
-      <ErrorAlert message={error} onClose={() => setError('')} />
 
       {selectedAct ? (
         /* Act Preview for PDF download */
@@ -201,7 +216,7 @@ export default function ActsPage() {
             <div className="space-y-3">
               {acts.map(act => (
                 <div key={act.id} className="card flex items-center justify-between hover:border-slate-600/80 transition-colors group">
-                  <button onClick={() => handleSelectAct(act.id)} className="flex-1 text-left py-1">
+                  <button onClick={() => handleSelectAct(asActId(act.id))} className="flex-1 text-left py-1">
                     <div className="flex items-center gap-4">
                       <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
                         <IconDocument className="w-5 h-5 text-emerald-400" />
@@ -219,10 +234,10 @@ export default function ActsPage() {
                     </div>
                   </button>
                   <div className="flex items-center gap-1 ml-4">
-                    <button onClick={() => handleSelectAct(act.id)} className="p-2 text-slate-400 hover:text-white hover:bg-slate-600/50 rounded-lg transition-colors" title="Просмотреть и скачать PDF">
+                    <button onClick={() => handleSelectAct(asActId(act.id))} className="p-2 text-slate-400 hover:text-white hover:bg-slate-600/50 rounded-lg transition-colors" title="Просмотреть и скачать PDF">
                       <IconEye className="w-4 h-4" />
                     </button>
-                    <button onClick={() => handleDeleteAct(act.id)} className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/20 rounded-lg transition-colors opacity-0 group-hover:opacity-100" title="Удалить">
+                    <button onClick={() => handleDeleteAct(asActId(act.id))} className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/20 rounded-lg transition-colors opacity-0 group-hover:opacity-100" title="Удалить">
                       <IconTrash className="w-4 h-4" />
                     </button>
                   </div>

@@ -2,6 +2,18 @@ import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
+/**
+ * Login page component
+ * 
+ * Provides authentication form for user login.
+ * Redirects to dashboard or previously intended page after successful login.
+ * 
+ * @example
+ * Used as a route in App.tsx:
+ * ```tsx
+ * <Route path="login" element={<Login />} />
+ * ```
+ */
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')

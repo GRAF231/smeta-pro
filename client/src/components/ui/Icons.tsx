@@ -1,7 +1,19 @@
+/**
+ * Props for icon components
+ */
 interface IconProps {
+  /** CSS classes for the icon (default: 'w-5 h-5') */
   className?: string
 }
 
+/**
+ * Plus icon component
+ * 
+ * @example
+ * ```tsx
+ * <IconPlus className="w-6 h-6" />
+ * ```
+ */
 export function IconPlus({ className = 'w-5 h-5' }: IconProps) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -10,6 +22,14 @@ export function IconPlus({ className = 'w-5 h-5' }: IconProps) {
   )
 }
 
+/**
+ * Trash/delete icon component
+ * 
+ * @example
+ * ```tsx
+ * <IconTrash className="w-6 h-6" />
+ * ```
+ */
 export function IconTrash({ className = 'w-5 h-5' }: IconProps) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -18,6 +38,14 @@ export function IconTrash({ className = 'w-5 h-5' }: IconProps) {
   )
 }
 
+/**
+ * Check mark icon component
+ * 
+ * @example
+ * ```tsx
+ * <IconCheck className="w-6 h-6" />
+ * ```
+ */
 export function IconCheck({ className = 'w-5 h-5' }: IconProps) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -26,6 +54,14 @@ export function IconCheck({ className = 'w-5 h-5' }: IconProps) {
   )
 }
 
+/**
+ * Close/X icon component
+ * 
+ * @example
+ * ```tsx
+ * <IconClose className="w-6 h-6" />
+ * ```
+ */
 export function IconClose({ className = 'w-5 h-5' }: IconProps) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -34,6 +70,14 @@ export function IconClose({ className = 'w-5 h-5' }: IconProps) {
   )
 }
 
+/**
+ * Back arrow icon component
+ * 
+ * @example
+ * ```tsx
+ * <IconBack className="w-6 h-6" />
+ * ```
+ */
 export function IconBack({ className = 'w-5 h-5' }: IconProps) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -42,6 +86,14 @@ export function IconBack({ className = 'w-5 h-5' }: IconProps) {
   )
 }
 
+/**
+ * Sync/refresh icon component
+ * 
+ * @example
+ * ```tsx
+ * <IconSync className="w-6 h-6" />
+ * ```
+ */
 export function IconSync({ className = 'w-5 h-5' }: IconProps) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -50,6 +102,14 @@ export function IconSync({ className = 'w-5 h-5' }: IconProps) {
   )
 }
 
+/**
+ * Eye/view icon component
+ * 
+ * @example
+ * ```tsx
+ * <IconEye className="w-6 h-6" />
+ * ```
+ */
 export function IconEye({ className = 'w-5 h-5' }: IconProps) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -59,6 +119,14 @@ export function IconEye({ className = 'w-5 h-5' }: IconProps) {
   )
 }
 
+/**
+ * Copy icon component
+ * 
+ * @example
+ * ```tsx
+ * <IconCopy className="w-6 h-6" />
+ * ```
+ */
 export function IconCopy({ className = 'w-5 h-5' }: IconProps) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -67,6 +135,14 @@ export function IconCopy({ className = 'w-5 h-5' }: IconProps) {
   )
 }
 
+/**
+ * Clock/time icon component
+ * 
+ * @example
+ * ```tsx
+ * <IconClock className="w-6 h-6" />
+ * ```
+ */
 export function IconClock({ className = 'w-5 h-5' }: IconProps) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -75,6 +151,14 @@ export function IconClock({ className = 'w-5 h-5' }: IconProps) {
   )
 }
 
+/**
+ * Document icon component
+ * 
+ * @example
+ * ```tsx
+ * <IconDocument className="w-6 h-6" />
+ * ```
+ */
 export function IconDocument({ className = 'w-5 h-5' }: IconProps) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -83,6 +167,14 @@ export function IconDocument({ className = 'w-5 h-5' }: IconProps) {
   )
 }
 
+/**
+ * Duplicate/copy icon component
+ * 
+ * @example
+ * ```tsx
+ * <IconDuplicate className="w-6 h-6" />
+ * ```
+ */
 export function IconDuplicate({ className = 'w-5 h-5' }: IconProps) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -91,6 +183,14 @@ export function IconDuplicate({ className = 'w-5 h-5' }: IconProps) {
   )
 }
 
+/**
+ * Edit/pencil icon component
+ * 
+ * @example
+ * ```tsx
+ * <IconEdit className="w-6 h-6" />
+ * ```
+ */
 export function IconEdit({ className = 'w-5 h-5' }: IconProps) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -99,6 +199,14 @@ export function IconEdit({ className = 'w-5 h-5' }: IconProps) {
   )
 }
 
+/**
+ * Download icon component
+ * 
+ * @example
+ * ```tsx
+ * <IconDownload className="w-6 h-6" />
+ * ```
+ */
 export function IconDownload({ className = 'w-5 h-5' }: IconProps) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -107,6 +215,14 @@ export function IconDownload({ className = 'w-5 h-5' }: IconProps) {
   )
 }
 
+/**
+ * Settings/gear icon component
+ * 
+ * @example
+ * ```tsx
+ * <IconSettings className="w-6 h-6" />
+ * ```
+ */
 export function IconSettings({ className = 'w-5 h-5' }: IconProps) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -116,6 +232,14 @@ export function IconSettings({ className = 'w-5 h-5' }: IconProps) {
   )
 }
 
+/**
+ * Link icon component
+ * 
+ * @example
+ * ```tsx
+ * <IconLink className="w-6 h-6" />
+ * ```
+ */
 export function IconLink({ className = 'w-5 h-5' }: IconProps) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -124,6 +248,14 @@ export function IconLink({ className = 'w-5 h-5' }: IconProps) {
   )
 }
 
+/**
+ * Chevron right icon component
+ * 
+ * @example
+ * ```tsx
+ * <IconChevronRight className="w-6 h-6" />
+ * ```
+ */
 export function IconChevronRight({ className = 'w-5 h-5' }: IconProps) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -132,6 +264,14 @@ export function IconChevronRight({ className = 'w-5 h-5' }: IconProps) {
   )
 }
 
+/**
+ * External link icon component
+ * 
+ * @example
+ * ```tsx
+ * <IconExternalLink className="w-6 h-6" />
+ * ```
+ */
 export function IconExternalLink({ className = 'w-5 h-5' }: IconProps) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -140,6 +280,14 @@ export function IconExternalLink({ className = 'w-5 h-5' }: IconProps) {
   )
 }
 
+/**
+ * Calculator icon component
+ * 
+ * @example
+ * ```tsx
+ * <IconCalculator className="w-6 h-6" />
+ * ```
+ */
 export function IconCalculator({ className = 'w-5 h-5' }: IconProps) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -148,6 +296,14 @@ export function IconCalculator({ className = 'w-5 h-5' }: IconProps) {
   )
 }
 
+/**
+ * Box/package icon component
+ * 
+ * @example
+ * ```tsx
+ * <IconBox className="w-6 h-6" />
+ * ```
+ */
 export function IconBox({ className = 'w-5 h-5' }: IconProps) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -156,6 +312,14 @@ export function IconBox({ className = 'w-5 h-5' }: IconProps) {
   )
 }
 
+/**
+ * Bolt/lightning icon component
+ * 
+ * @example
+ * ```tsx
+ * <IconBolt className="w-6 h-6" />
+ * ```
+ */
 export function IconBolt({ className = 'w-5 h-5' }: IconProps) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -163,4 +327,14 @@ export function IconBolt({ className = 'w-5 h-5' }: IconProps) {
     </svg>
   )
 }
+
+/**
+ * Refresh icon component (alias for IconSync)
+ * 
+ * @example
+ * ```tsx
+ * <IconRefresh className="w-6 h-6" />
+ * ```
+ */
+export const IconRefresh = IconSync
 

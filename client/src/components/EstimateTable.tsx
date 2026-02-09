@@ -1,24 +1,57 @@
 import { useState, useRef, useCallback, TouchEvent } from 'react'
-import { EstimateData } from '../services/api'
+import type { EstimateData } from '../types'
+import { formatNumber } from '../utils/format'
+import Table from './tables/Table'
+import TableRow from './tables/TableRow'
+import TableCell from './tables/TableCell'
 
+/**
+ * Props for EstimateTable component
+ */
 interface EstimateTableProps {
+  /** Estimate data to display */
   data: EstimateData
+  /** Name of the view (displayed in section headers) */
   viewName?: string
   /** @deprecated use viewName instead */
   variant?: 'customer' | 'master'
 }
 
+/**
+ * Zoom state for pinch-to-zoom functionality
+ */
 interface ZoomState {
   scale: number
   initialDistance: number | null
   baseScale: number
 }
 
-function PinchZoomSection({ children, sectionName, sectionIdx }: {
+/**
+ * Props for PinchZoomSection component
+ */
+interface PinchZoomSectionProps {
+  /** Section content (table) */
   children: React.ReactNode
+  /** Section name */
   sectionName: string
+  /** Section index for animation delay */
   sectionIdx: number
-}) {
+}
+
+/**
+ * Section wrapper with pinch-to-zoom functionality
+ * 
+ * Provides touch gesture support for zooming table content on mobile devices.
+ * Includes reset button when zoomed in.
+ * 
+ * @example
+ * ```tsx
+ * <PinchZoomSection sectionName="Раздел 1" sectionIdx={0}>
+ *   <Table>...</Table>
+ * </PinchZoomSection>
+ * ```
+ */
+function PinchZoomSection({ children, sectionName, sectionIdx }: PinchZoomSectionProps) {
   const [zoom, setZoom] = useState<ZoomState>({ scale: 1, initialDistance: null, baseScale: 1 })
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -99,11 +132,22 @@ function PinchZoomSection({ children, sectionName, sectionIdx }: {
   )
 }
 
+/**
+ * Estimate table component for displaying estimate data
+ * 
+ * Renders a formatted table with sections, items, and totals.
+ * Supports pinch-to-zoom on mobile devices for better readability.
+ * Displays grand total at the bottom.
+ * 
+ * @example
+ * ```tsx
+ * <EstimateTable
+ *   data={estimateData}
+ *   viewName="Для заказчика"
+ * />
+ * ```
+ */
 export default function EstimateTable({ data, viewName, variant }: EstimateTableProps) {
-  const formatNumber = (num: number) => {
-    return new Intl.NumberFormat('ru-RU').format(num)
-  }
-
   // Use viewName if available, fallback to variant-based label
   const label = viewName || (variant === 'master' ? 'Для мастеров' : 'Для заказчика')
   void label // used in print header if needed
@@ -116,45 +160,42 @@ export default function EstimateTable({ data, viewName, variant }: EstimateTable
           sectionName={section.name}
           sectionIdx={sectionIdx}
         >
-          <table className="w-full text-xs sm:text-sm">
+          <Table>
             <thead>
-              <tr className="text-left text-slate-400 border-b border-slate-700/50">
-                <th className="px-1.5 sm:px-4 py-1.5 sm:py-3 font-medium w-8 sm:w-12">№</th>
-                <th className="px-1.5 sm:px-4 py-1.5 sm:py-3 font-medium">Наименование работ</th>
-                <th className="px-1.5 sm:px-4 py-1.5 sm:py-3 font-medium text-center w-12 sm:w-20">Ед.</th>
-                <th className="px-1.5 sm:px-4 py-1.5 sm:py-3 font-medium text-right w-12 sm:w-24">Кол-во</th>
-                <th className="px-1.5 sm:px-4 py-1.5 sm:py-3 font-medium text-right w-16 sm:w-28">Цена</th>
-                <th className="px-1.5 sm:px-4 py-1.5 sm:py-3 font-medium text-right w-18 sm:w-32">Сумма</th>
-              </tr>
+              <TableRow header>
+                <TableCell header compact className="w-8 sm:w-12">№</TableCell>
+                <TableCell header compact>Наименование работ</TableCell>
+                <TableCell header align="center" compact className="w-12 sm:w-20">Ед.</TableCell>
+                <TableCell header align="right" compact className="w-12 sm:w-24">Кол-во</TableCell>
+                <TableCell header align="right" compact className="w-16 sm:w-28">Цена</TableCell>
+                <TableCell header align="right" compact className="w-18 sm:w-32">Сумма</TableCell>
+              </TableRow>
             </thead>
             <tbody>
               {section.items.map((item, idx) => (
-                <tr
-                  key={idx}
-                  className="border-b border-slate-700/30 hover:bg-slate-700/20 transition-colors"
-                >
-                  <td className="px-1.5 sm:px-4 py-1.5 sm:py-3 text-slate-500">{item.number}</td>
-                  <td className="px-1.5 sm:px-4 py-1.5 sm:py-3 text-slate-200 leading-tight">{item.name}</td>
-                  <td className="px-1.5 sm:px-4 py-1.5 sm:py-3 text-center text-slate-400">{item.unit}</td>
-                  <td className="px-1.5 sm:px-4 py-1.5 sm:py-3 text-right text-slate-300">{item.quantity}</td>
-                  <td className="px-1.5 sm:px-4 py-1.5 sm:py-3 text-right text-slate-300 whitespace-nowrap">{formatNumber(item.price)}</td>
-                  <td className="px-1.5 sm:px-4 py-1.5 sm:py-3 text-right font-medium text-white whitespace-nowrap">
+                <TableRow key={idx} hoverable>
+                  <TableCell compact className="text-slate-500">{item.number}</TableCell>
+                  <TableCell compact className="text-slate-200 leading-tight">{item.name}</TableCell>
+                  <TableCell align="center" compact className="text-slate-400">{item.unit}</TableCell>
+                  <TableCell align="right" compact className="text-slate-300">{item.quantity}</TableCell>
+                  <TableCell align="right" compact className="text-slate-300 whitespace-nowrap">{formatNumber(item.price)}</TableCell>
+                  <TableCell align="right" compact className="font-medium text-white whitespace-nowrap">
                     {formatNumber(item.total)}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
             </tbody>
             <tfoot>
-              <tr className="bg-primary-500/10">
-                <td colSpan={5} className="px-1.5 sm:px-4 py-2.5 sm:py-4 text-right font-semibold text-slate-300 text-xs sm:text-sm">
+              <TableRow highlighted>
+                <TableCell colSpan={5} align="right" compact className="font-semibold text-slate-300 text-xs sm:text-sm">
                   Итого по разделу:
-                </td>
-                <td className="px-1.5 sm:px-4 py-2.5 sm:py-4 text-right font-bold text-sm sm:text-lg whitespace-nowrap text-primary-400">
+                </TableCell>
+                <TableCell align="right" compact className="font-bold text-sm sm:text-lg whitespace-nowrap text-primary-400">
                   {formatNumber(section.subtotal)} ₽
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             </tfoot>
-          </table>
+          </Table>
         </PinchZoomSection>
       ))}
 

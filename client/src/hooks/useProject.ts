@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { projectsApi } from '../services/api'
-import type { ProjectWithEstimate } from '../types'
+import type { ProjectWithEstimate, ProjectId } from '../types'
 
 interface UseProjectResult {
   project: ProjectWithEstimate | null
@@ -12,10 +12,33 @@ interface UseProjectResult {
 }
 
 /**
- * Hook for loading a project by ID with loading/error state management.
- * Used across EstimatePage, ActPage, ActsPage, ProjectEditor, MaterialsPage.
+ * Hook for loading a project by ID with loading/error state management
+ * 
+ * Automatically loads project data when ID changes. Used across multiple pages:
+ * EstimatePage, ActPage, ActsPage, ProjectEditor, MaterialsPage.
+ * 
+ * @param id - Project ID (undefined to disable loading)
+ * @returns Object containing:
+ * - `project` - Project data with full estimate (null if not loaded or loading)
+ * - `isLoading` - Loading state flag
+ * - `error` - Error message string (empty if no error)
+ * - `setError` - Function to manually set error state
+ * - `setProject` - Function to manually set project state
+ * - `reload` - Function to reload project data
+ * 
+ * @example
+ * ```tsx
+ * const { project, isLoading, error, reload } = useProject(projectId)
+ * 
+ * if (isLoading) return <Spinner />
+ * if (error) return <ErrorAlert message={error} />
+ * if (!project) return <NotFound />
+ * 
+ * // Use project data
+ * return <div>{project.title}</div>
+ * ```
  */
-export function useProject(id: string | undefined): UseProjectResult {
+export function useProject(id: ProjectId | undefined): UseProjectResult {
   const [project, setProject] = useState<ProjectWithEstimate | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')

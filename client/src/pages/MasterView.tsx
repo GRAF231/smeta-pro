@@ -1,8 +1,22 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { projectsApi, EstimateData } from '../services/api'
+import { projectsApi } from '../services/api'
+import type { EstimateData } from '../types'
 import EstimateTable from '../components/EstimateTable'
 
+/**
+ * Master view page component
+ * 
+ * Displays estimate data for master craftsman access via public link token.
+ * Supports password-protected views with password verification.
+ * Shows simplified estimate view without editing capabilities.
+ * 
+ * @example
+ * Used as a route in App.tsx:
+ * ```tsx
+ * <Route path="/m/:token" element={<MasterView />} />
+ * ```
+ */
 export default function MasterView() {
   const { token } = useParams<{ token: string }>()
   const [data, setData] = useState<EstimateData | null>(null)

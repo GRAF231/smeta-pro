@@ -1,31 +1,27 @@
-import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { projectsApi, ProjectWithEstimate } from '../services/api'
+import { useProject } from '../hooks/useProject'
 import ActGenerator from '../components/ActGenerator'
 import { PageSpinner } from '../components/ui/Spinner'
+import { IconBack, IconDocument } from '../components/ui/Icons'
+import { getProjectIdFromParams } from '../utils/params'
 
+/**
+ * Act page component
+ * 
+ * Displays the act generator interface for creating acts of completed work.
+ * Loads project data and provides act generation functionality.
+ * 
+ * @example
+ * Used as a route in App.tsx:
+ * ```tsx
+ * <Route path="projects/:id/acts" element={<ActPage />} />
+ * ```
+ */
 export default function ActPage() {
-  const { id } = useParams<{ id: string }>()
+  const params = useParams<{ id: string }>()
+  const id = getProjectIdFromParams(params)
   const navigate = useNavigate()
-
-  const [project, setProject] = useState<ProjectWithEstimate | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    if (id) loadProject(id)
-  }, [id])
-
-  const loadProject = async (projectId: string) => {
-    try {
-      const res = await projectsApi.getOne(projectId)
-      setProject(res.data)
-    } catch {
-      setError('Ошибка загрузки проекта')
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  const { project, isLoading, error } = useProject(id)
 
   if (isLoading) {
     return <PageSpinner />
@@ -49,15 +45,11 @@ export default function ActPage() {
     return (
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <button onClick={() => navigate(`/projects/${id}/acts`)} className="text-slate-400 hover:text-white mb-4 flex items-center gap-1">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
+          <IconBack className="w-4 h-4" />
           Назад к актам
         </button>
         <div className="card text-center py-12">
-          <svg className="w-16 h-16 mx-auto mb-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
+          <IconDocument className="w-16 h-16 mx-auto mb-4 text-slate-600" />
           <h2 className="font-display text-xl font-bold text-white mb-2">Смета пуста</h2>
           <p className="text-slate-400 mb-6">Для создания акта нужно сначала добавить разделы и позиции в смету.</p>
           <button

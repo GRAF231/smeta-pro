@@ -1,39 +1,62 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { projectsApi } from '../services/api'
+import { useProjects } from '../hooks/api/useProjects'
+import { useProject } from '../hooks/useProject'
 import { PageSpinner } from '../components/ui/Spinner'
-import ErrorAlert from '../components/ui/ErrorAlert'
+import { useToast } from '../components/ui/ToastContainer'
 import Spinner from '../components/ui/Spinner'
+import { getProjectIdFromParams } from '../utils/params'
 
+/**
+ * Project form page component
+ * 
+ * Handles both creating new projects and editing existing ones.
+ * Supports optional Google Sheets integration.
+ * 
+ * @example
+ * Used as routes in App.tsx:
+ * ```tsx
+ * <Route path="projects/new" element={<ProjectForm />} />
+ * <Route path="projects/:id/edit" element={<ProjectForm />} />
+ * ```
+ */
 export default function ProjectForm() {
-  const { id } = useParams()
+  const params = useParams<{ id?: string }>()
+  const id = params.id ? getProjectIdFromParams(params) : undefined
   const isEdit = Boolean(id)
   
   const [title, setTitle] = useState('')
   const [googleSheetUrl, setGoogleSheetUrl] = useState('')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [isLoadingData, setIsLoadingData] = useState(isEdit)
   
   const navigate = useNavigate()
+  const { project, isLoading: isLoadingData, error: projectError } = useProject(id)
+  const { createProject, updateProject } = useProjects()
+  const { showError } = useToast()
 
   useEffect(() => {
-    if (isEdit && id) {
-      loadProject(id)
+    if (project && isEdit) {
+      setTitle(project.title)
+      if (project.googleSheetId) {
+        setGoogleSheetUrl(`https://docs.google.com/spreadsheets/d/${project.googleSheetId}`)
+      }
     }
-  }, [id, isEdit])
+  }, [project, isEdit])
 
-  const loadProject = async (projectId: string) => {
-    try {
-      const res = await projectsApi.getOne(projectId)
-      setTitle(res.data.title)
-      setGoogleSheetUrl(`https://docs.google.com/spreadsheets/d/${res.data.googleSheetId}`)
-    } catch {
-      setError('Ошибка загрузки проекта')
-    } finally {
-      setIsLoadingData(false)
+  useEffect(() => {
+    if (projectError) {
+      setError(projectError)
     }
-  }
+  }, [projectError])
+
+  // Show error toast when error changes
+  useEffect(() => {
+    if (error) {
+      showError(error)
+      setError('')
+    }
+  }, [error, showError])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -47,20 +70,20 @@ export default function ProjectForm() {
       }
 
       if (isEdit && id) {
-        await projectsApi.update(id, data)
+        await updateProject(id, data)
       } else {
-        await projectsApi.create(data)
+        await createProject(data)
       }
       navigate('/dashboard')
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } }
-      setError(error.response?.data?.error || 'Ошибка сохранения проекта')
+    } catch (err) {
+      // Error is handled by hook
+      showError('Ошибка сохранения проекта')
     } finally {
       setIsLoading(false)
     }
   }
 
-  if (isLoadingData) {
+  if (isLoadingData && isEdit) {
     return <PageSpinner />
   }
 
@@ -70,8 +93,6 @@ export default function ProjectForm() {
         <h1 className="font-display text-2xl font-bold text-white mb-8">
           {isEdit ? 'Редактировать проект' : 'Новый проект'}
         </h1>
-
-        <ErrorAlert message={error} onClose={() => setError('')} />
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>

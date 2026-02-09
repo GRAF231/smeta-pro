@@ -2,6 +2,18 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
+/**
+ * Register page component
+ * 
+ * Provides registration form for new users.
+ * Redirects to dashboard after successful registration.
+ * 
+ * @example
+ * Used as a route in App.tsx:
+ * ```tsx
+ * <Route path="register" element={<Register />} />
+ * ```
+ */
 export default function Register() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')

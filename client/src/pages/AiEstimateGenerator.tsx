@@ -1,113 +1,44 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { projectsApi } from '../services/api'
+import { useFileUpload } from './AiEstimateGenerator/hooks/useFileUpload'
+import { useFormState } from '../hooks/forms/useFormState'
+import { usePdfGeneration } from './AiEstimateGenerator/hooks/usePdfGeneration'
+import FileUploadZone from './AiEstimateGenerator/components/FileUploadZone'
+import ProgressIndicator from './AiEstimateGenerator/components/ProgressIndicator'
+import Input from '../components/ui/Input'
+import FormField from '../components/ui/FormField'
+import Button from '../components/ui/Button'
 
+/**
+ * AI Estimate Generator page component
+ * 
+ * Allows users to upload a PDF design project and generate an estimate using AI
+ */
 export default function AiEstimateGenerator() {
-  const [title, setTitle] = useState('')
-  const [pricelistUrl, setPricelistUrl] = useState('')
-  const [comments, setComments] = useState('')
-  const [pdfFile, setPdfFile] = useState<File | null>(null)
-  const [isDragOver, setIsDragOver] = useState(false)
-  const [error, setError] = useState('')
-  const [isLoading, setIsLoading] = useState(false)
-  const [progress, setProgress] = useState('')
-  
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragOver(true)
-  }, [])
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragOver(false)
-  }, [])
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragOver(false)
-    
-    const file = e.dataTransfer.files[0]
-    if (file && file.type === 'application/pdf') {
-      setPdfFile(file)
-      setError('')
-    } else {
-      setError('Допускаются только PDF файлы')
+  const [error, setError] = useState('')
+  
+  const fileUpload = useFileUpload()
+  const formState = useFormState({
+    title: '',
+    pricelistUrl: '',
+    comments: '',
+  })
+  const { isLoading, progress, handleSubmit } = usePdfGeneration(
+    fileUpload.pdfFile,
+    formState.values.title,
+    formState.values.pricelistUrl,
+    formState.values.comments,
+    (err: string) => {
+      setError(err)
+      fileUpload.setError(err)
     }
-  }, [])
+  )
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      if (file.type === 'application/pdf') {
-        setPdfFile(file)
-        setError('')
-      } else {
-        setError('Допускаются только PDF файлы')
-      }
-    }
-  }
-
-  const removePdf = () => {
-    setPdfFile(null)
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
-  }
-
-  const formatFileSize = (bytes: number): string => {
-    if (bytes < 1024) return bytes + ' Б'
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' КБ'
-    return (bytes / (1024 * 1024)).toFixed(1) + ' МБ'
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleFormSubmit = async (e: React.FormEvent) => {
     setError('')
-
-    if (!pdfFile) {
-      setError('Загрузите PDF файл с дизайн-проектом')
-      return
-    }
-
-    if (!title.trim()) {
-      setError('Укажите название сметы')
-      return
-    }
-
-    if (!pricelistUrl.trim()) {
-      setError('Укажите ссылку на прайс-лист')
-      return
-    }
-
-    setIsLoading(true)
-    setProgress('Загрузка PDF и конвертация страниц в изображения...')
-
-    try {
-      const formData = new FormData()
-      formData.append('pdf', pdfFile)
-      formData.append('title', title.trim())
-      formData.append('pricelistUrl', pricelistUrl.trim())
-      formData.append('comments', comments.trim())
-
-      // Update progress after a delay (server processes PDF first, then sends to AI)
-      setTimeout(() => setProgress('ИИ анализирует изображения дизайн-проекта...'), 5000)
-      setTimeout(() => setProgress('ИИ составляет смету на основе прайс-листа...'), 30000)
-      setTimeout(() => setProgress('Почти готово, финализация сметы...'), 90000)
-
-      const res = await projectsApi.generateFromPdf(formData)
-      
-      // Redirect to project editor
-      navigate(`/projects/${res.data.id}/edit`)
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } }
-      setError(error.response?.data?.error || 'Ошибка генерации сметы. Попробуйте снова.')
-    } finally {
-      setIsLoading(false)
-      setProgress('')
-    }
+    fileUpload.setError('')
+    await handleSubmit(e)
   }
 
   return (
@@ -129,125 +60,67 @@ export default function AiEstimateGenerator() {
           </div>
         </div>
 
-        {error && (
+        {(error || fileUpload.error) && (
           <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">
-            {error}
+            {error || fileUpload.error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Title */}
-          <div>
-            <label htmlFor="title" className="label">Название сметы</label>
-            <input
-              type="text"
+        <form onSubmit={handleFormSubmit} className="space-y-6">
+          <FormField label="Название сметы" required htmlFor="title">
+            <Input
               id="title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="input-field"
+              type="text"
+              value={formState.values.title}
+              onChange={(e) => formState.setValue('title', e.target.value)}
               placeholder="Например: Ремонт квартиры ул. Ленина 15"
               required
               disabled={isLoading}
             />
-          </div>
+          </FormField>
 
-          {/* PDF Upload */}
-          <div>
-            <label className="label">PDF дизайн-проект</label>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,application/pdf"
-              onChange={handleFileSelect}
-              className="hidden"
-              disabled={isLoading}
-            />
+          <FileUploadZone
+            pdfFile={fileUpload.pdfFile}
+            isDragOver={fileUpload.isDragOver}
+            isLoading={isLoading}
+            fileInputRef={fileUpload.fileInputRef}
+            onDragOver={fileUpload.handleDragOver}
+            onDragLeave={fileUpload.handleDragLeave}
+            onDrop={fileUpload.handleDrop}
+            onFileSelect={fileUpload.handleFileSelect}
+            onRemove={fileUpload.removePdf}
+          />
 
-            {!pdfFile ? (
-              <div
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-                className={`
-                  border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-200
-                  ${isDragOver 
-                    ? 'border-purple-400 bg-purple-500/10' 
-                    : 'border-slate-600 hover:border-slate-500 hover:bg-slate-700/30'
-                  }
-                `}
-              >
-                <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-slate-700/50 flex items-center justify-center">
-                  <svg className="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                  </svg>
-                </div>
-                <p className="text-sm text-slate-300 mb-1">
-                  Перетащите PDF файл сюда или нажмите для выбора
-                </p>
-                <p className="text-xs text-slate-500">
-                  Максимальный размер: 100 МБ
-                </p>
-              </div>
-            ) : (
-              <div className="flex items-center gap-3 p-4 bg-slate-700/30 rounded-xl border border-slate-600/50">
-                <div className="w-10 h-10 rounded-lg bg-red-500/20 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                  </svg>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-white truncate">{pdfFile.name}</p>
-                  <p className="text-xs text-slate-500">{formatFileSize(pdfFile.size)}</p>
-                </div>
-                {!isLoading && (
-                  <button
-                    type="button"
-                    onClick={removePdf}
-                    className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Pricelist URL */}
-          <div>
-            <label htmlFor="pricelistUrl" className="label">Ссылка на прайс-лист (Google Таблица)</label>
-            <input
-              type="url"
+          <FormField
+            label="Ссылка на прайс-лист (Google Таблица)"
+            required
+            htmlFor="pricelistUrl"
+            hint="Таблица с ценами на работы. Формат произвольный — ИИ сам определит структуру."
+          >
+            <Input
               id="pricelistUrl"
-              value={pricelistUrl}
-              onChange={(e) => setPricelistUrl(e.target.value)}
-              className="input-field"
+              type="url"
+              value={formState.values.pricelistUrl}
+              onChange={(e) => formState.setValue('pricelistUrl', e.target.value)}
               placeholder="https://docs.google.com/spreadsheets/d/..."
               required
               disabled={isLoading}
             />
-            <p className="mt-2 text-sm text-slate-500">
-              Таблица с ценами на работы. Формат произвольный — ИИ сам определит структуру.
-            </p>
-          </div>
+          </FormField>
 
-          {/* Comments */}
-          <div>
-            <label htmlFor="comments" className="label">
-              Уточняющие комментарии
-              <span className="text-slate-500 font-normal ml-1">(необязательно)</span>
-            </label>
+          <FormField
+            label="Уточняющие комментарии (необязательно)"
+            htmlFor="comments"
+          >
             <textarea
               id="comments"
-              value={comments}
-              onChange={(e) => setComments(e.target.value)}
+              value={formState.values.comments}
+              onChange={(e) => formState.setValue('comments', e.target.value)}
               className="input-field min-h-[120px] resize-y"
               placeholder="Например: квартира 60 кв.м., 2 комнаты, бюджет средний, нужна полная замена электрики..."
               disabled={isLoading}
             />
-          </div>
+          </FormField>
 
           {/* Info block */}
           <div className="bg-slate-700/30 rounded-xl p-4">
@@ -277,54 +150,33 @@ export default function AiEstimateGenerator() {
             </div>
           </div>
 
-          {/* Progress indicator */}
-          {isLoading && progress && (
-            <div className="p-4 bg-purple-500/10 border border-purple-500/20 rounded-xl">
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <div className="w-8 h-8 rounded-full border-2 border-purple-500/30"></div>
-                  <div className="absolute inset-0 w-8 h-8 rounded-full border-2 border-purple-400 border-t-transparent animate-spin"></div>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-purple-300">{progress}</p>
-                  <p className="text-xs text-purple-400/70 mt-0.5">Это может занять до 2-5 минут для больших документов</p>
-                </div>
-              </div>
-            </div>
-          )}
+          <ProgressIndicator progress={progress} />
 
-          {/* Buttons */}
           <div className="flex gap-4 pt-4">
-            <button
+            <Button
               type="button"
+              variant="secondary"
+              fullWidth
               onClick={() => navigate('/dashboard')}
-              className="btn-secondary flex-1"
               disabled={isLoading}
             >
               Отмена
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
-              disabled={isLoading || !pdfFile}
-              className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500"
+              variant="primary"
+              fullWidth
+              loading={isLoading}
+              disabled={!fileUpload.pdfFile}
+              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500"
+              icon={
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+              }
             >
-              {isLoading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  Генерация...
-                </span>
-              ) : (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                  Сгенерировать смету
-                </span>
-              )}
-            </button>
+              Сгенерировать смету
+            </Button>
           </div>
         </form>
       </div>

@@ -1,39 +1,54 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { projectsApi, Project, EstimateView } from '../services/api'
+import type { EstimateView } from '../types'
+import { useProjects } from '../hooks/api/useProjects'
 import { copyToClipboard } from '../utils/clipboard'
 import { PageSpinner } from '../components/ui/Spinner'
-import ErrorAlert from '../components/ui/ErrorAlert'
+import { useToast } from '../components/ui/ToastContainer'
 import { IconPlus, IconEdit, IconTrash, IconCopy, IconCheck, IconDocument } from '../components/ui/Icons'
+import { asProjectId } from '../types'
 
+/**
+ * Dashboard page component
+ * 
+ * Displays list of user's projects with actions:
+ * - Create new project
+ * - Generate project from PDF (AI)
+ * - Copy view links
+ * - Edit project
+ * - Delete project
+ * 
+ * Shows empty state when no projects exist.
+ * 
+ * @example
+ * Used as a route in App.tsx:
+ * ```tsx
+ * <Route path="dashboard" element={<Dashboard />} />
+ * ```
+ */
 export default function Dashboard() {
-  const [projects, setProjects] = useState<Project[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState('')
+  const { projects, isLoading, error, loadProjects, deleteProject, setError } = useProjects()
   const [copiedLink, setCopiedLink] = useState<string | null>(null)
+  const { showError } = useToast()
 
   useEffect(() => {
     loadProjects()
-  }, [])
+  }, [loadProjects])
 
-  const loadProjects = async () => {
-    try {
-      const res = await projectsApi.getAll()
-      setProjects(res.data)
-    } catch {
-      setError('Ошибка загрузки проектов')
-    } finally {
-      setIsLoading(false)
+  // Show error toast when error changes
+  useEffect(() => {
+    if (error) {
+      showError(error)
+      setError('')
     }
-  }
+  }, [error, showError, setError])
 
   const handleDelete = async (id: string) => {
     if (!confirm('Вы уверены, что хотите удалить этот проект?')) return
     try {
-      await projectsApi.delete(id)
-      setProjects(projects.filter(p => p.id !== id))
+      await deleteProject(asProjectId(id))
     } catch {
-      setError('Ошибка удаления проекта')
+      // Error is handled by hook
     }
   }
 
@@ -71,8 +86,6 @@ export default function Dashboard() {
           </Link>
         </div>
       </div>
-
-      <ErrorAlert message={error} onClose={() => setError('')} />
 
       {projects.length === 0 ? (
         <div className="card text-center py-16">

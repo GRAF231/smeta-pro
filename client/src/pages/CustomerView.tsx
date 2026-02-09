@@ -1,9 +1,22 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { projectsApi, EstimateData } from '../services/api'
+import { projectsApi } from '../services/api'
+import type { EstimateData } from '../types'
 import EstimateTable from '../components/EstimateTable'
 import Spinner from '../components/ui/Spinner'
 
+/**
+ * Customer view page component
+ * 
+ * Displays estimate data for customer access via public link token.
+ * Shows simplified estimate view without editing capabilities.
+ * 
+ * @example
+ * Used as a route in App.tsx:
+ * ```tsx
+ * <Route path="/c/:token" element={<CustomerView />} />
+ * ```
+ */
 export default function CustomerView() {
   const { token } = useParams<{ token: string }>()
   const [data, setData] = useState<EstimateData | null>(null)
