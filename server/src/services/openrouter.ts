@@ -1,6 +1,11 @@
 import https from 'https'
 import http from 'http'
 
+/**
+ * Сервис для работы с OpenRouter API
+ * Предоставляет функции для генерации смет через ИИ и парсинга товаров
+ */
+
 export interface GeneratedEstimateItem {
   name: string
   unit: string

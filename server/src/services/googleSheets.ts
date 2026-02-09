@@ -1,5 +1,10 @@
 import { google } from 'googleapis'
 
+/**
+ * Сервис для работы с Google Sheets API
+ * Предоставляет функции для получения и парсинга данных из Google Таблиц
+ */
+
 // Column indices based on the example.xlsx analysis
 const COLUMN_MAPPING = {
   number: 0,       // A - № or section name

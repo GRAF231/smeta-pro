@@ -1,18 +1,36 @@
-import { Database as DatabaseType, Statement } from 'better-sqlite3'
+import Database, { Database as DatabaseType } from 'better-sqlite3'
+import path from 'path'
+import fs from 'fs'
 import { v4 as uuidv4 } from 'uuid'
-import { initDatabase as initDb } from '../config/database'
 
-// Initialize database and get instance
-export const db: DatabaseType = initDb()
+/**
+ * Инициализация базы данных
+ * Создает подключение к БД, таблицы и выполняет миграции
+ */
+export function initDatabase(): DatabaseType {
+  // Ensure data directory exists
+  const dataDir = path.join(__dirname, '../../data')
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true })
+  }
 
-// Re-export initDatabase for backward compatibility
-export function initDatabase() {
-  // Database is already initialized, just log
+  const dbPath = path.join(dataDir, 'smeta.db')
+  const db: DatabaseType = new Database(dbPath)
+
+  // Create tables
+  createTables(db)
+  
+  // Run migrations
+  migrateToViews(db)
+
   console.log('✅ Database initialized')
+  return db
 }
 
-// Legacy: keep these functions for reference but they're now in config/database.ts
-function createTables() {
+/**
+ * Создание всех таблиц базы данных
+ */
+function createTables(db: DatabaseType): void {
   // Enable foreign keys
   db.pragma('foreign_keys = ON')
 
@@ -336,8 +354,10 @@ function createTables() {
   `)
 }
 
-// Migrate legacy customer/master data to new estimate_views system
-function migrateToViews() {
+/**
+ * Миграция данных из старой системы customer/master в новую систему views
+ */
+function migrateToViews(db: DatabaseType): void {
   // Check if migration is needed: estimates exist but no views
   const estimateCount = (db.prepare('SELECT COUNT(*) as cnt FROM estimates').get() as { cnt: number }).cnt
   const viewCount = (db.prepare('SELECT COUNT(*) as cnt FROM estimate_views').get() as { cnt: number }).cnt
@@ -407,241 +427,3 @@ function migrateToViews() {
   console.log(`[Migration] Done. Created ${estimateCount * 2} views.`)
 }
 
-// Note: Tables are created by initDatabase() from config/database.ts
-// These functions are kept for reference but are now in config/database.ts
-
-// User queries
-export const userQueries: Record<string, Statement> = {
-  findByEmail: db.prepare('SELECT * FROM users WHERE email = ?'),
-  findById: db.prepare('SELECT id, email, name, role, created_at FROM users WHERE id = ?'),
-  create: db.prepare('INSERT INTO users (id, email, password_hash, name, role) VALUES (?, ?, ?, ?, ?)'),
-}
-
-// Estimate queries
-export const estimateQueries: Record<string, Statement> = {
-  findByBrigadirId: db.prepare('SELECT * FROM estimates WHERE brigadir_id = ? ORDER BY created_at DESC'),
-  findById: db.prepare('SELECT * FROM estimates WHERE id = ?'),
-  create: db.prepare(`
-    INSERT INTO estimates (id, brigadir_id, google_sheet_id, title, customer_link_token, master_link_token, column_mapping)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `),
-  update: db.prepare(`
-    UPDATE estimates SET google_sheet_id = ?, title = ? WHERE id = ? AND brigadir_id = ?
-  `),
-  updateLastSynced: db.prepare(`
-    UPDATE estimates SET last_synced_at = datetime('now') WHERE id = ?
-  `),
-  delete: db.prepare('DELETE FROM estimates WHERE id = ? AND brigadir_id = ?'),
-}
-
-// Section queries (no more show_customer/show_master in create/update)
-export const sectionQueries: Record<string, Statement> = {
-  findByEstimateId: db.prepare('SELECT * FROM estimate_sections WHERE estimate_id = ? ORDER BY sort_order'),
-  findById: db.prepare('SELECT * FROM estimate_sections WHERE id = ?'),
-  create: db.prepare(`
-    INSERT INTO estimate_sections (id, estimate_id, name, sort_order)
-    VALUES (?, ?, ?, ?)
-  `),
-  update: db.prepare(`
-    UPDATE estimate_sections SET name = ? WHERE id = ?
-  `),
-  delete: db.prepare('DELETE FROM estimate_sections WHERE id = ?'),
-  deleteByEstimateId: db.prepare('DELETE FROM estimate_sections WHERE estimate_id = ?'),
-}
-
-// Item queries (no more customer/master price columns in create/update)
-export const itemQueries: Record<string, Statement> = {
-  findByEstimateId: db.prepare(`
-    SELECT * FROM estimate_items WHERE estimate_id = ? ORDER BY sort_order
-  `),
-  findBySectionId: db.prepare(`
-    SELECT * FROM estimate_items WHERE section_id = ? ORDER BY sort_order
-  `),
-  findById: db.prepare('SELECT * FROM estimate_items WHERE id = ?'),
-  create: db.prepare(`
-    INSERT INTO estimate_items (id, estimate_id, section_id, number, name, unit, quantity, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `),
-  update: db.prepare(`
-    UPDATE estimate_items SET name = ?, unit = ?, quantity = ? WHERE id = ?
-  `),
-  delete: db.prepare('DELETE FROM estimate_items WHERE id = ?'),
-  deleteByEstimateId: db.prepare('DELETE FROM estimate_items WHERE estimate_id = ?'),
-}
-
-// ========== VIEW QUERIES ==========
-
-export const viewQueries: Record<string, Statement> = {
-  findByEstimateId: db.prepare('SELECT * FROM estimate_views WHERE estimate_id = ? ORDER BY sort_order'),
-  findById: db.prepare('SELECT * FROM estimate_views WHERE id = ?'),
-  findByLinkToken: db.prepare('SELECT * FROM estimate_views WHERE link_token = ?'),
-  create: db.prepare(`
-    INSERT INTO estimate_views (id, estimate_id, name, link_token, password, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `),
-  update: db.prepare(`
-    UPDATE estimate_views SET name = ?, password = ? WHERE id = ?
-  `),
-  delete: db.prepare('DELETE FROM estimate_views WHERE id = ?'),
-  deleteByEstimateId: db.prepare('DELETE FROM estimate_views WHERE estimate_id = ?'),
-  getMaxSortOrder: db.prepare('SELECT COALESCE(MAX(sort_order), 0) as max_order FROM estimate_views WHERE estimate_id = ?'),
-}
-
-export const viewSectionSettingsQueries: Record<string, Statement> = {
-  findByViewId: db.prepare('SELECT * FROM view_section_settings WHERE view_id = ?'),
-  findByViewAndSection: db.prepare('SELECT * FROM view_section_settings WHERE view_id = ? AND section_id = ?'),
-  upsert: db.prepare(`
-    INSERT INTO view_section_settings (id, view_id, section_id, visible)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(view_id, section_id) DO UPDATE SET visible = excluded.visible
-  `),
-  deleteByViewId: db.prepare('DELETE FROM view_section_settings WHERE view_id = ?'),
-  deleteBySectionId: db.prepare('DELETE FROM view_section_settings WHERE section_id = ?'),
-}
-
-export const viewItemSettingsQueries: Record<string, Statement> = {
-  findByViewId: db.prepare('SELECT * FROM view_item_settings WHERE view_id = ?'),
-  findByViewAndItem: db.prepare('SELECT * FROM view_item_settings WHERE view_id = ? AND item_id = ?'),
-  findByItemId: db.prepare('SELECT * FROM view_item_settings WHERE item_id = ?'),
-  upsert: db.prepare(`
-    INSERT INTO view_item_settings (id, view_id, item_id, price, total, visible)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(view_id, item_id) DO UPDATE SET price = excluded.price, total = excluded.total, visible = excluded.visible
-  `),
-  deleteByViewId: db.prepare('DELETE FROM view_item_settings WHERE view_id = ?'),
-  deleteByItemId: db.prepare('DELETE FROM view_item_settings WHERE item_id = ?'),
-}
-
-// ========== VERSION QUERIES ==========
-
-export const versionQueries: Record<string, Statement> = {
-  findByEstimateId: db.prepare(`
-    SELECT * FROM estimate_versions WHERE estimate_id = ? ORDER BY version_number DESC
-  `),
-  findById: db.prepare('SELECT * FROM estimate_versions WHERE id = ?'),
-  getMaxVersionNumber: db.prepare(`
-    SELECT COALESCE(MAX(version_number), 0) as max_version FROM estimate_versions WHERE estimate_id = ?
-  `),
-  create: db.prepare(`
-    INSERT INTO estimate_versions (id, estimate_id, version_number, name)
-    VALUES (?, ?, ?, ?)
-  `),
-  delete: db.prepare('DELETE FROM estimate_versions WHERE id = ?'),
-}
-
-export const versionSectionQueries: Record<string, Statement> = {
-  findByVersionId: db.prepare(`
-    SELECT * FROM estimate_version_sections WHERE version_id = ? ORDER BY sort_order
-  `),
-  create: db.prepare(`
-    INSERT INTO estimate_version_sections (id, version_id, original_section_id, name, sort_order)
-    VALUES (?, ?, ?, ?, ?)
-  `),
-}
-
-export const versionItemQueries: Record<string, Statement> = {
-  findByVersionId: db.prepare(`
-    SELECT * FROM estimate_version_items WHERE version_id = ? ORDER BY sort_order
-  `),
-  findByVersionSectionId: db.prepare(`
-    SELECT * FROM estimate_version_items WHERE version_section_id = ? ORDER BY sort_order
-  `),
-  create: db.prepare(`
-    INSERT INTO estimate_version_items (id, version_id, version_section_id, original_item_id, number, name, unit, quantity, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `),
-}
-
-export const versionViewQueries: Record<string, Statement> = {
-  findByVersionId: db.prepare(`
-    SELECT * FROM estimate_version_views WHERE version_id = ? ORDER BY sort_order
-  `),
-  create: db.prepare(`
-    INSERT INTO estimate_version_views (id, version_id, original_view_id, name, sort_order)
-    VALUES (?, ?, ?, ?, ?)
-  `),
-}
-
-export const versionViewSectionSettingsQueries: Record<string, Statement> = {
-  findByVersionId: db.prepare(`
-    SELECT * FROM version_view_section_settings WHERE version_id = ?
-  `),
-  findByVersionViewId: db.prepare(`
-    SELECT * FROM version_view_section_settings WHERE version_view_id = ?
-  `),
-  create: db.prepare(`
-    INSERT INTO version_view_section_settings (id, version_id, version_view_id, version_section_id, visible)
-    VALUES (?, ?, ?, ?, ?)
-  `),
-}
-
-export const versionViewItemSettingsQueries: Record<string, Statement> = {
-  findByVersionId: db.prepare(`
-    SELECT * FROM version_view_item_settings WHERE version_id = ?
-  `),
-  findByVersionViewId: db.prepare(`
-    SELECT * FROM version_view_item_settings WHERE version_view_id = ?
-  `),
-  create: db.prepare(`
-    INSERT INTO version_view_item_settings (id, version_id, version_view_id, version_item_id, price, total, visible)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `),
-}
-
-// Act image queries
-export const actImageQueries: Record<string, Statement> = {
-  findByEstimateId: db.prepare('SELECT * FROM estimate_act_images WHERE estimate_id = ?'),
-  findByEstimateAndType: db.prepare('SELECT * FROM estimate_act_images WHERE estimate_id = ? AND image_type = ?'),
-  upsert: db.prepare(`
-    INSERT INTO estimate_act_images (id, estimate_id, image_type, data)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(estimate_id, image_type) DO UPDATE SET data = excluded.data
-  `),
-  delete: db.prepare('DELETE FROM estimate_act_images WHERE estimate_id = ? AND image_type = ?'),
-}
-
-// ========== SAVED ACTS QUERIES ==========
-
-export const savedActQueries: Record<string, Statement> = {
-  findByEstimateId: db.prepare('SELECT * FROM saved_acts WHERE estimate_id = ? ORDER BY created_at DESC'),
-  findById: db.prepare('SELECT * FROM saved_acts WHERE id = ?'),
-  create: db.prepare(`
-    INSERT INTO saved_acts (id, estimate_id, view_id, act_number, act_date, executor_name, executor_details, customer_name, director_name, service_name, selection_mode, grand_total)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `),
-  delete: db.prepare('DELETE FROM saved_acts WHERE id = ?'),
-}
-
-export const savedActItemQueries: Record<string, Statement> = {
-  findByActId: db.prepare('SELECT * FROM saved_act_items WHERE act_id = ?'),
-  findByEstimateItemIds: db.prepare(`
-    SELECT sai.*, sa.act_number, sa.act_date, sa.id as act_id
-    FROM saved_act_items sai
-    JOIN saved_acts sa ON sa.id = sai.act_id
-    WHERE sa.estimate_id = ? AND sai.item_id IS NOT NULL
-    ORDER BY sa.created_at DESC
-  `),
-  create: db.prepare(`
-    INSERT INTO saved_act_items (id, act_id, item_id, section_id, name, unit, quantity, price, total)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `),
-}
-
-// Material queries
-export const materialQueries: Record<string, Statement> = {
-  findByEstimateId: db.prepare('SELECT * FROM estimate_materials WHERE estimate_id = ? ORDER BY sort_order'),
-  findById: db.prepare('SELECT * FROM estimate_materials WHERE id = ?'),
-  create: db.prepare(`
-    INSERT INTO estimate_materials (id, estimate_id, name, article, brand, unit, price, quantity, total, url, description, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `),
-  update: db.prepare(`
-    UPDATE estimate_materials SET
-      name = ?, article = ?, brand = ?, unit = ?, price = ?, quantity = ?, total = ?,
-      url = ?, description = ?, updated_at = datetime('now')
-    WHERE id = ?
-  `),
-  delete: db.prepare('DELETE FROM estimate_materials WHERE id = ?'),
-  deleteByEstimateId: db.prepare('DELETE FROM estimate_materials WHERE estimate_id = ?'),
-  getMaxSortOrder: db.prepare('SELECT COALESCE(MAX(sort_order), 0) as max_order FROM estimate_materials WHERE estimate_id = ?'),
-}
