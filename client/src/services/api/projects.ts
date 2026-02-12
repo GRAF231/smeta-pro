@@ -170,5 +170,39 @@ export const projectsApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 300000,
     }),
+  
+  // Test Structure Analysis
+  testStructureAnalysis: (formData: FormData) =>
+    api.post<{
+      taskId: string
+      totalPages: number
+      titlePagesCount: number
+      planPagesCount: number
+      structure: {
+        totalArea: number | null
+        address: string | null
+        roomCount: number
+        rooms: Array<{
+          name: string
+          type: string | null
+          area: number | null
+          planType: 'original' | 'renovated' | 'both'
+          source: string
+        }>
+        planTypes: string[]
+      }
+      savedRoomData: Array<{
+        id: string
+        room_name: string
+        room_type: string | null
+        area: number | null
+      }>
+      titlePages: string[]
+      planPages: string[]
+      tableImages: string[]
+    }>('/projects/test-structure-analysis', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 300000,
+    }),
 }
 

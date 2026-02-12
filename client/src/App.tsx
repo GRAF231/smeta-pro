@@ -13,6 +13,7 @@ import ActPage from './pages/ActPage'
 import ActsPage from './pages/ActsPage'
 import AiEstimateGenerator from './pages/AiEstimateGenerator'
 import TestPageClassification from './pages/TestPageClassification'
+import TestStructureAnalysis from './pages/TestStructureAnalysis'
 import PublicView from './pages/PublicView'
 import MaterialsPage from './pages/MaterialsPage'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -74,6 +75,14 @@ function App() {
           element={
             <ProtectedRoute>
               <TestPageClassification />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="test-structure-analysis"
+          element={
+            <ProtectedRoute>
+              <TestStructureAnalysis />
             </ProtectedRoute>
           }
         />

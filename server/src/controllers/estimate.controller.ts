@@ -3,6 +3,7 @@ import { AuthRequest } from '../types/common'
 import { estimateService } from '../services/estimate.service'
 import { pdfGenerationService } from '../services/pdf-generation.service'
 import { pageClassificationService } from '../services/page-classification.service'
+import { structureAnalysisService } from '../services/structure-analysis.service'
 import { generationTaskRepository } from '../repositories/generation-task.repository'
 import { requireString } from '../utils/validation'
 import { asyncHandler } from '../middleware/errorHandler'
@@ -255,6 +256,126 @@ export class EstimateController {
     } catch (error) {
       generationTaskRepository.setError(taskId, (error as Error).message)
       generationTaskRepository.updateStatus(taskId, 'failed', 'stage_1', 0)
+      throw error
+    }
+  })
+
+  /**
+   * Тестировать анализ структуры проекта
+   */
+  testStructureAnalysis = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const pdfFile = (req as any).file
+    if (!pdfFile) {
+      throw new Error('PDF файл обязателен')
+    }
+
+    // Create a test task
+    const taskId = generationTaskRepository.create(
+      req.user!.id,
+      'processing',
+      'stage_2',
+      0
+    )
+
+    try {
+      // Convert PDF to images
+      const parser = new PDFParse({ data: new Uint8Array(pdfFile.buffer) })
+      let pageDataUrls: string[]
+
+      try {
+        const screenshotResult = await parser.getScreenshot({
+          imageDataUrl: false,
+          imageBuffer: true,
+          desiredWidth: 1600, // Higher resolution for better table reading
+        })
+
+        if (!screenshotResult.pages || screenshotResult.pages.length === 0) {
+          throw new Error('Не удалось обработать PDF. Убедитесь, что файл не поврежден.')
+        }
+
+        console.log(`[TestStructureAnalysis] Converting ${screenshotResult.pages.length} pages to JPEG...`)
+
+        pageDataUrls = []
+        for (let i = 0; i < screenshotResult.pages.length; i++) {
+          const page = screenshotResult.pages[i]
+          const jpegBuffer = await sharp(Buffer.from(page.data))
+            .jpeg({ quality: 75 }) // Higher quality for better OCR
+            .toBuffer()
+          pageDataUrls.push(`data:image/jpeg;base64,${jpegBuffer.toString('base64')}`)
+          ;(page as any).data = null
+        }
+      } catch (err) {
+        console.error('PDF screenshot error:', err)
+        throw new Error('Ошибка обработки PDF файла.')
+      } finally {
+        await parser.destroy().catch(() => {})
+      }
+
+      // Step 1: Classify pages
+      console.log(`[TestStructureAnalysis] Classifying ${pageDataUrls.length} pages...`)
+      await pageClassificationService.classifyPages(taskId, pageDataUrls)
+
+      // Step 2: Get title pages and plan pages
+      const classifications = pageClassificationService.getClassifications(taskId)
+      const titlePages: string[] = []
+      const planPages: string[] = []
+
+      for (const classification of classifications) {
+        const pageImage = classification.image_data_url
+        if (!pageImage) continue
+
+        if (classification.page_type === 'other' && classification.page_number <= 3) {
+          // First few "other" pages are likely title pages
+          titlePages.push(pageImage)
+        } else if (classification.page_type === 'plan') {
+          planPages.push(pageImage)
+        }
+      }
+
+      // If no plan pages found, try to find them by looking for pages with "план" in classification
+      if (planPages.length === 0) {
+        console.log('[TestStructureAnalysis] No plan pages found in classification, using all pages as potential plans')
+        // Use all pages as potential plans
+        for (const classification of classifications) {
+          if (classification.image_data_url) {
+            planPages.push(classification.image_data_url)
+          }
+        }
+      }
+
+      if (planPages.length === 0) {
+        throw new Error('Не найдено планов помещений в PDF. Убедитесь, что файл содержит планы.')
+      }
+
+      console.log(
+        `[TestStructureAnalysis] Found ${titlePages.length} title pages and ${planPages.length} plan pages`
+      )
+
+      // Step 3: Analyze structure
+      const result = await structureAnalysisService.analyzeProjectStructure(
+        taskId,
+        titlePages,
+        planPages
+      )
+
+      // Update task status
+      generationTaskRepository.updateStatus(taskId, 'completed', 'stage_3', 100)
+
+      sendSuccess(res, {
+        taskId,
+        totalPages: pageDataUrls.length,
+        titlePagesCount: titlePages.length,
+        planPagesCount: planPages.length,
+        structure: result.structure,
+        savedRoomData: result.savedRoomData,
+        // Return images sent to AI for debugging
+        titlePages: titlePages,
+        planPages: planPages,
+        tableImages: result.tableImages || [], // Table images extracted and sent to AI
+      })
+    } catch (error) {
+      generationTaskRepository.setError(taskId, (error as Error).message)
+      generationTaskRepository.updateStatus(taskId, 'failed', 'stage_2', 0)
       throw error
     }
   })

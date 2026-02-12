@@ -463,6 +463,731 @@ export async function classifyPages(
   return classifications
 }
 
+// ========== PROJECT STRUCTURE ANALYSIS ==========
+
+export interface ProjectRoom {
+  name: string
+  type: string | null
+  area: number | null // Площадь из таблицы (м²)
+  planType: 'original' | 'renovated' | 'both' // Из какого плана взята информация
+  source: string // Название плана (например, "Обмерный план" или "План расстановки мебели")
+}
+
+export interface ProjectStructure {
+  totalArea: number | null // Общая площадь из таблицы
+  address: string | null
+  roomCount: number
+  rooms: ProjectRoom[]
+  planTypes: string[] // Типы найденных планов (например, ["Обмерный план", "План расстановки мебели"])
+}
+
+const STRUCTURE_ANALYSIS_PROMPT = `Ты — эксперт по анализу архитектурных планов. Твоя задача — точно извлечь информацию о структуре проекта из планов.
+
+## КРИТИЧЕСКИ ВАЖНО:
+1. **НЕ ВЫДУМЫВАЙ ЧИСЛА!** Используй ТОЛЬКО те площади, которые написаны в таблицах на планах. Если площадь не указана в таблице — ставь null.
+2. Если в проекте есть несколько планов (например, "Обмерный план М1:50" и "План расстановки мебели М1:50"), они могут содержать РАЗНЫЕ помещения и площади. Сохрани информацию из ОБОИХ планов.
+3. Внимательно найди таблицы с площадями помещений на каждом плане (обычно внизу или сбоку плана, с заголовками типа "Площадь м²" или "Площадь, м²"). Извлеки точные значения из этих таблиц.
+4. Если помещение есть только в одном плане — укажи planType: "original" (для обмерного плана) или "renovated" (для плана после перепланировки).
+5. Если помещение есть в обоих планах — создай ОДНУ запись с planType: "both" и используй площадь из того плана, где она указана, или из обоих если они отличаются (в этом случае можно создать две записи с разными source).
+6. Название помещения бери ТОЧНО из таблицы, как оно написано.
+7. Если в таблице указана общая площадь (обычно внизу таблицы, строка "Общая площадь" или "Итого") — извлеки её в поле totalArea.
+
+## Инструкции:
+1. Найди титульные страницы и извлеки общую информацию (адрес, общая площадь, количество комнат).
+2. Найди планы помещений (обмерные планы, планы расстановки мебели и т.д.).
+3. Для каждого плана найди таблицу с площадями помещений (обычно внизу или сбоку плана).
+4. Извлеки из таблиц:
+   - Название каждого помещения (точно как написано)
+   - Площадь помещения в м² (ТОЧНО как указано в таблице)
+   - Тип помещения (кухня, спальня, ванная, коридор и т.д.)
+5. Определи тип плана (например, "Обмерный план М1:50", "План расстановки мебели М1:50").
+6. Если на плане указана общая площадь — извлеки её тоже.
+
+## ВАЖНО: Ответ СТРОГО в формате JSON без дополнительных текстов. Только валидный JSON.
+
+Формат ответа:
+{
+  "totalArea": 36.83,
+  "address": "Адрес проекта (если указан)",
+  "roomCount": 4,
+  "planTypes": ["Обмерный план М1:50", "План расстановки мебели М1:50"],
+  "rooms": [
+    {
+      "name": "Прихожая - коридор",
+      "type": "corridor",
+      "area": 4.20,
+      "planType": "original",
+      "source": "Обмерный план М1:50"
+    },
+    {
+      "name": "Кухня",
+      "type": "kitchen",
+      "area": 12.31,
+      "planType": "original",
+      "source": "Обмерный план М1:50"
+    },
+    {
+      "name": "Кухня-столовая",
+      "type": "kitchen",
+      "area": 14.32,
+      "planType": "renovated",
+      "source": "План расстановки мебели М1:50"
+    }
+  ]
+}
+
+Если помещение есть в обоих планах с одинаковой площадью, можно указать planType: "both".`
+
+const TABLE_DETECTION_PROMPT = `Ты — эксперт по анализу архитектурных планов. Твоя задача — найти таблицы с площадями помещений на планах.
+
+## КРИТИЧЕСКИ ВАЖНО:
+1. **Включи ВСЮ таблицу целиком** - все колонки (включая колонку с площадями), все строки (включая заголовки и итоговую строку).
+2. Координаты должны включать ВСЮ таблицу от левого края первой колонки до правого края последней колонки.
+3. **Высота (height) должна включать заголовок таблицы сверху И ВСЮ итоговую строку снизу** (включая "Общая площадь" или "Итого").
+4. **Координата y должна быть на уровне начала заголовка таблицы**, а height должна доходить ДО КОНЦА итоговой строки включительно.
+5. Если видишь строку "Общая площадь" или "Итого" внизу таблицы - она ДОЛЖНА быть включена в height.
+
+## Инструкции:
+1. Найди все таблицы с площадями помещений на каждом плане (обычно внизу или сбоку плана).
+2. Для каждой таблицы определи её расположение: верхний левый угол (x, y) и размеры (width, height) в пикселях.
+3. **Убедись, что width включает ВСЕ колонки таблицы** (№, Наименование помещения, Площадь м² и т.д.).
+4. **Убедись, что height включает заголовок и все строки** до последней строки с итогами.
+5. Также определи тип плана (например, "Обмерный план М1:50" или "План расстановки мебели М1:50").
+6. Если таблица не найдена, верни пустой массив для этого плана.
+
+## ВАЖНО: Ответ СТРОГО в формате JSON без дополнительных текстов. Только валидный JSON.
+
+Формат ответа:
+[
+  {
+    "planIndex": 0,
+    "planType": "Обмерный план М1:50",
+    "tables": [
+      {
+        "x": 100,
+        "y": 2000,
+        "width": 1200,
+        "height": 600,
+        "description": "Таблица с площадями помещений внизу плана, включает все колонки"
+      }
+    ]
+  },
+  {
+    "planIndex": 1,
+    "planType": "План расстановки мебели М1:50",
+    "tables": [
+      {
+        "x": 50,
+        "y": 1900,
+        "width": 1300,
+        "height": 700,
+        "description": "Таблица с площадями помещений внизу плана, включает все колонки"
+      }
+    ]
+  }
+]`
+
+export interface TableLocation {
+  x: number
+  y: number
+  width: number
+  height: number
+  description: string
+}
+
+export interface PlanTableInfo {
+  planIndex: number
+  planType: string
+  tables: TableLocation[]
+}
+
+const STRUCTURE_FROM_TABLES_PROMPT = `Ты — эксперт по анализу таблиц с площадями помещений. Твоя задача — точно извлечь информацию из таблиц.
+
+## КРИТИЧЕСКИ ВАЖНО:
+1. **НЕ ВЫДУМЫВАЙ ЧИСЛА!** Используй ТОЛЬКО те площади, которые написаны в таблицах. Если площадь не указана — ставь null.
+2. Название помещения бери ТОЧНО из таблицы, как оно написано (включая все знаки препинания, дефисы и т.д.).
+3. Площадь бери ТОЧНО как указано в таблице (число в м²). Не округляй и не изменяй значения.
+4. Если в таблице указана общая площадь (обычно внизу таблицы, строка "Общая площадь" или "Итого") — извлеки её в поле totalArea.
+
+## Инструкции:
+1. Для каждой таблицы извлеки все строки с помещениями.
+2. Для каждой строки извлеки: название помещения (ТОЧНО как написано), площадь в м² (ТОЧНО как указано).
+3. Определи тип помещения (кухня, спальня, ванная, коридор и т.д.) по названию.
+4. Определи тип плана из контекста:
+   - "original" для обмерного плана (обычно содержит слова "Обмерный", "Существующий")
+   - "renovated" для плана после перепланировки (обычно содержит слова "Расстановка мебели", "После перепланировки", "Проект")
+
+## ВАЖНО: Ответ СТРОГО в формате JSON без дополнительных текстов. Только валидный JSON.
+
+Если у тебя несколько таблиц, верни массив результатов для каждой таблицы. Если одна таблица — верни один объект.
+
+Формат ответа для одной таблицы:
+{
+  "totalArea": 36.83,
+  "planType": "Обмерный план М1:50",
+  "planTypeCode": "original",
+  "rooms": [
+    {
+      "name": "Прихожая - коридор",
+      "type": "corridor",
+      "area": 4.20
+    },
+    {
+      "name": "Кухня",
+      "type": "kitchen",
+      "area": 12.31
+    }
+  ]
+}
+
+Формат ответа для нескольких таблиц:
+[
+  {
+    "totalArea": 36.83,
+    "planType": "Обмерный план М1:50",
+    "planTypeCode": "original",
+    "rooms": [...]
+  },
+  {
+    "totalArea": 57.35,
+    "planType": "План расстановки мебели М1:50",
+    "planTypeCode": "renovated",
+    "rooms": [...]
+  }
+]`
+
+/**
+ * Обнаружить таблицы на планах через ИИ
+ * @param planPages Массив data URLs планов помещений
+ * @returns Информация о расположении таблиц на каждом плане
+ */
+export async function detectTablesOnPlans(
+  planPages: string[]
+): Promise<PlanTableInfo[]> {
+  const apiKey = getApiKey()
+
+  if (planPages.length === 0) {
+    return []
+  }
+
+  const content: MessageContent[] = []
+
+  content.push({
+    type: 'text',
+    text: `Найди таблицы с площадями помещений на ${planPages.length} планах. Для каждого плана определи расположение таблиц (координаты x, y, width, height в пикселях) и тип плана.`,
+  })
+
+  for (let i = 0; i < planPages.length; i++) {
+    content.push({
+      type: 'image_url',
+      image_url: {
+        url: planPages[i],
+      },
+    })
+    content.push({
+      type: 'text',
+      text: `План ${i + 1}`,
+    })
+  }
+
+  content.push({
+    type: 'text',
+    text: '\nВерни JSON массив с информацией о таблицах для каждого плана.',
+  })
+
+  const requestBodyStr = JSON.stringify({
+    model: 'google/gemini-2.5-flash',
+    messages: [
+      {
+        role: 'system',
+        content: TABLE_DETECTION_PROMPT,
+      },
+      {
+        role: 'user',
+        content,
+      },
+    ],
+    temperature: 0.1,
+    max_tokens: 4000,
+  })
+
+  const requestBodyBuffer = Buffer.from(requestBodyStr, 'utf-8')
+  console.log(`[AI] Detecting tables on ${planPages.length} plans...`)
+
+  const responseText = await makeOpenRouterRequest(apiKey, requestBodyBuffer)
+
+  let response: {
+    choices?: Array<{
+      message?: {
+        content?: string
+      }
+    }>
+    error?: {
+      message?: string
+    }
+  }
+
+  try {
+    response = JSON.parse(responseText)
+  } catch {
+    throw new Error('Не удалось распарсить ответ от OpenRouter API')
+  }
+
+  if (response.error) {
+    throw new Error(`OpenRouter API: ${response.error.message || 'Неизвестная ошибка'}`)
+  }
+
+  const responseContent = response.choices?.[0]?.message?.content
+  if (!responseContent) {
+    throw new Error('ИИ не вернул ответ. Попробуйте снова.')
+  }
+
+  let jsonStr = responseContent.trim()
+  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (jsonMatch) {
+    jsonStr = jsonMatch[1].trim()
+  }
+
+  let tableInfos: PlanTableInfo[]
+  try {
+    const parsed = JSON.parse(jsonStr)
+    tableInfos = Array.isArray(parsed) ? parsed : []
+    
+    // Validate and normalize
+    tableInfos = tableInfos.map((info: any) => ({
+      planIndex: Number(info.planIndex) || 0,
+      planType: String(info.planType || ''),
+      tables: Array.isArray(info.tables)
+        ? info.tables.map((table: any) => ({
+            x: Number(table.x) || 0,
+            y: Number(table.y) || 0,
+            width: Number(table.width) || 0,
+            height: Number(table.height) || 0,
+            description: String(table.description || ''),
+          }))
+        : [],
+    }))
+  } catch (err) {
+    console.error('[AI] Failed to parse table detection JSON:', jsonStr.substring(0, 500))
+    throw new Error('ИИ вернул некорректный формат данных при обнаружении таблиц.')
+  }
+
+  console.log(`[AI] Detected tables on ${tableInfos.length} plans`)
+  return tableInfos
+}
+
+/**
+ * Анализировать структуру проекта через ИИ, используя только таблицы
+ * @param titlePages Массив data URLs титульных страниц
+ * @param tableImages Массив data URLs изображений таблиц с площадями
+ * @param planTypes Массив типов планов для каждой таблицы
+ * @returns Структура проекта с помещениями и площадями
+ */
+export async function analyzeProjectStructureFromTables(
+  titlePages: string[],
+  tableImages: string[],
+  planTypes: string[]
+): Promise<ProjectStructure> {
+  const apiKey = getApiKey()
+
+  if (tableImages.length === 0) {
+    throw new Error('Необходимо предоставить хотя бы одну таблицу')
+  }
+
+  const content: MessageContent[] = []
+
+  content.push({
+    type: 'text',
+    text: `Проанализируй структуру проекта из таблиц с площадями помещений. В проекте ${titlePages.length} титульных страниц и ${tableImages.length} таблиц с площадями.`,
+  })
+
+  // Add title pages first
+  if (titlePages.length > 0) {
+    content.push({
+      type: 'text',
+      text: '\n=== ТИТУЛЬНЫЕ СТРАНИЦЫ ===',
+    })
+    for (let i = 0; i < titlePages.length; i++) {
+      content.push({
+        type: 'image_url',
+        image_url: {
+          url: titlePages[i],
+        },
+      })
+      content.push({
+        type: 'text',
+        text: `Титульная страница ${i + 1}`,
+      })
+    }
+  }
+
+  // Add table images
+  content.push({
+    type: 'text',
+    text: '\n=== ТАБЛИЦЫ С ПЛОЩАДЯМИ ПОМЕЩЕНИЙ ===\nВнимательно извлеки точные значения из каждой таблицы.',
+  })
+  for (let i = 0; i < tableImages.length; i++) {
+    content.push({
+      type: 'image_url',
+      image_url: {
+        url: tableImages[i],
+      },
+    })
+    content.push({
+      type: 'text',
+      text: `Таблица ${i + 1} (${planTypes[i] || 'Неизвестный план'})`,
+    })
+  }
+
+  content.push({
+    type: 'text',
+    text: '\nВерни JSON с извлеченной структурой проекта. Помни: используй ТОЛЬКО площади из таблиц, не выдумывай числа!',
+  })
+
+  const requestBodyStr = JSON.stringify({
+    model: 'google/gemini-2.5-flash',
+    messages: [
+      {
+        role: 'system',
+        content: STRUCTURE_FROM_TABLES_PROMPT,
+      },
+      {
+        role: 'user',
+        content,
+      },
+    ],
+    temperature: 0.1,
+    max_tokens: 8000,
+  })
+
+  const requestBodyBuffer = Buffer.from(requestBodyStr, 'utf-8')
+  const sizeMB = (requestBodyBuffer.length / (1024 * 1024)).toFixed(1)
+  console.log(
+    `[AI] Analyzing structure from ${tableImages.length} tables (request size: ${sizeMB} MB)...`
+  )
+
+  const responseText = await makeOpenRouterRequest(apiKey, requestBodyBuffer)
+
+  let response: {
+    choices?: Array<{
+      message?: {
+        content?: string
+      }
+    }>
+    error?: {
+      message?: string
+    }
+  }
+
+  try {
+    response = JSON.parse(responseText)
+  } catch {
+    throw new Error('Не удалось распарсить ответ от OpenRouter API')
+  }
+
+  if (response.error) {
+    throw new Error(`OpenRouter API: ${response.error.message || 'Неизвестная ошибка'}`)
+  }
+
+  const responseContent = response.choices?.[0]?.message?.content
+  if (!responseContent) {
+    throw new Error('ИИ не вернул ответ. Попробуйте снова.')
+  }
+
+  let jsonStr = responseContent.trim()
+  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (jsonMatch) {
+    jsonStr = jsonMatch[1].trim()
+  }
+
+  // Parse multiple table results and combine them
+  let allRooms: ProjectRoom[] = []
+  let allPlanTypes: string[] = []
+  let totalArea: number | null = null
+  let address: string | null = null
+
+  try {
+    // Try to parse as single object first
+    const parsed = JSON.parse(jsonStr)
+    
+    if (Array.isArray(parsed)) {
+      // Multiple table results
+      for (const tableResult of parsed) {
+        if (tableResult.rooms) {
+          allRooms.push(...tableResult.rooms.map((room: any) => ({
+            name: String(room.name || ''),
+            type: room.type || null,
+            area: room.area ? Number(room.area) : null,
+            planType: (tableResult.planTypeCode || 'original') as 'original' | 'renovated' | 'both',
+            source: String(tableResult.planType || ''),
+          })))
+        }
+        if (tableResult.planType && !allPlanTypes.includes(tableResult.planType)) {
+          allPlanTypes.push(tableResult.planType)
+        }
+        if (tableResult.totalArea && !totalArea) {
+          totalArea = Number(tableResult.totalArea)
+        }
+      }
+    } else {
+      // Single table result
+      allRooms = (parsed.rooms || []).map((room: any) => ({
+        name: String(room.name || ''),
+        type: room.type || null,
+        area: room.area ? Number(room.area) : null,
+        planType: (parsed.planTypeCode || 'original') as 'original' | 'renovated' | 'both',
+        source: String(parsed.planType || ''),
+      }))
+      if (parsed.planType) {
+        allPlanTypes.push(parsed.planType)
+      }
+      if (parsed.totalArea) {
+        totalArea = Number(parsed.totalArea)
+      }
+      if (parsed.address) {
+        address = String(parsed.address)
+      }
+    }
+  } catch (err) {
+    console.error('[AI] Failed to parse structure JSON:', jsonStr.substring(0, 500))
+    throw new Error('ИИ вернул некорректный формат данных. Попробуйте снова.')
+  }
+
+  // Deduplicate rooms: remove duplicates within same plan type (same name + same planType = duplicate)
+  // Normalize room names for comparison (trim, lowercase, normalize spaces)
+  const normalizeRoomName = (name: string): string => {
+    return name
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, ' ') // Normalize multiple spaces to single space
+      .replace(/[–—]/g, '-') // Normalize different dash types
+  }
+
+  // Group rooms by normalized name and plan type to detect duplicates
+  const deduplicatedRooms: ProjectRoom[] = []
+  const seenKeys = new Set<string>()
+
+  for (const room of allRooms) {
+    const normalizedName = normalizeRoomName(room.name)
+    // Use only name and planType for deduplication key (ignore source to catch duplicates from same plan type)
+    const dedupKey = `${normalizedName}|${room.planType}`
+    
+    if (seenKeys.has(dedupKey)) {
+      console.log(
+        `[AI] Deduplicating room "${room.name}" (${room.planType}): skipping duplicate`
+      )
+      continue
+    }
+
+    // Check for duplicates within same plan type (same name + same planType = duplicate)
+    const duplicateInSamePlan = deduplicatedRooms.find(
+      (r) =>
+        normalizeRoomName(r.name) === normalizedName &&
+        r.planType === room.planType
+    )
+
+    if (duplicateInSamePlan) {
+      // Prefer room with area, or keep existing if both have areas
+      if (room.area !== null && duplicateInSamePlan.area === null) {
+        const index = deduplicatedRooms.indexOf(duplicateInSamePlan)
+        deduplicatedRooms[index] = room
+        console.log(
+          `[AI] Replacing room "${room.name}" (${room.planType}) with version that has area`
+        )
+      } else {
+        console.log(
+          `[AI] Deduplicating room "${room.name}" (${room.planType}): skipping duplicate (already exists)`
+        )
+      }
+    } else {
+      seenKeys.add(dedupKey)
+      deduplicatedRooms.push(room)
+    }
+  }
+
+  console.log(
+    `[AI] Deduplicated rooms: ${allRooms.length} -> ${deduplicatedRooms.length} (removed ${allRooms.length - deduplicatedRooms.length} duplicates)`
+  )
+
+  const structure: ProjectStructure = {
+    totalArea,
+    address,
+    roomCount: deduplicatedRooms.length,
+    rooms: deduplicatedRooms,
+    planTypes: allPlanTypes,
+  }
+
+  if (structure.rooms.length === 0) {
+    throw new Error('ИИ не смог извлечь информацию о помещениях из таблиц. Проверьте качество изображений таблиц.')
+  }
+
+  console.log(
+    `[AI] Extracted structure: ${structure.rooms.length} rooms, total area: ${structure.totalArea || 'N/A'} m²`
+  )
+
+  return structure
+}
+
+/**
+ * Анализировать структуру проекта через ИИ (старый метод для обратной совместимости)
+ * @param titlePages Массив data URLs титульных страниц
+ * @param planPages Массив data URLs планов помещений
+ * @returns Структура проекта с помещениями и площадями
+ */
+export async function analyzeProjectStructure(
+  titlePages: string[],
+  planPages: string[]
+): Promise<ProjectStructure> {
+  const apiKey = getApiKey()
+
+  if (planPages.length === 0) {
+    throw new Error('Необходимо предоставить хотя бы один план')
+  }
+
+  // Build multimodal content
+  const content: MessageContent[] = []
+
+  content.push({
+    type: 'text',
+    text: `Проанализируй структуру проекта. В проекте ${titlePages.length} титульных страниц и ${planPages.length} планов помещений.`,
+  })
+
+  // Add title pages first
+  if (titlePages.length > 0) {
+    content.push({
+      type: 'text',
+      text: '\n=== ТИТУЛЬНЫЕ СТРАНИЦЫ ===',
+    })
+    for (let i = 0; i < titlePages.length; i++) {
+      content.push({
+        type: 'image_url',
+        image_url: {
+          url: titlePages[i],
+        },
+      })
+      content.push({
+        type: 'text',
+        text: `Титульная страница ${i + 1}`,
+      })
+    }
+  }
+
+  // Add plan pages
+  content.push({
+    type: 'text',
+    text: '\n=== ПЛАНЫ ПОМЕЩЕНИЙ ===\nВнимательно найди таблицы с площадями на каждом плане и извлеки точные значения.',
+  })
+  for (let i = 0; i < planPages.length; i++) {
+    content.push({
+      type: 'image_url',
+      image_url: {
+        url: planPages[i],
+      },
+    })
+    content.push({
+      type: 'text',
+      text: `План ${i + 1}`,
+    })
+  }
+
+  content.push({
+    type: 'text',
+    text: '\nВерни JSON с извлеченной структурой проекта. Помни: используй ТОЛЬКО площади из таблиц, не выдумывай числа!',
+  })
+
+  const requestBodyStr = JSON.stringify({
+    model: 'google/gemini-2.5-flash',
+    messages: [
+      {
+        role: 'system',
+        content: STRUCTURE_ANALYSIS_PROMPT,
+      },
+      {
+        role: 'user',
+        content,
+      },
+    ],
+    temperature: 0.1, // Low temperature for accurate extraction
+    max_tokens: 8000,
+  })
+
+  const requestBodyBuffer = Buffer.from(requestBodyStr, 'utf-8')
+  const sizeMB = (requestBodyBuffer.length / (1024 * 1024)).toFixed(1)
+  console.log(
+    `[AI] Analyzing project structure: ${titlePages.length} title pages, ${planPages.length} plan pages (request size: ${sizeMB} MB)...`
+  )
+
+  const responseText = await makeOpenRouterRequest(apiKey, requestBodyBuffer)
+
+  let response: {
+    choices?: Array<{
+      message?: {
+        content?: string
+      }
+    }>
+    error?: {
+      message?: string
+    }
+  }
+
+  try {
+    response = JSON.parse(responseText)
+  } catch {
+    throw new Error('Не удалось распарсить ответ от OpenRouter API')
+  }
+
+  if (response.error) {
+    throw new Error(`OpenRouter API: ${response.error.message || 'Неизвестная ошибка'}`)
+  }
+
+  const responseContent = response.choices?.[0]?.message?.content
+  if (!responseContent) {
+    throw new Error('ИИ не вернул ответ. Попробуйте снова.')
+  }
+
+  // Extract JSON from the response
+  let jsonStr = responseContent.trim()
+  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (jsonMatch) {
+    jsonStr = jsonMatch[1].trim()
+  }
+
+  let structure: ProjectStructure
+  try {
+    const parsed = JSON.parse(jsonStr)
+    
+    structure = {
+      totalArea: parsed.totalArea ? Number(parsed.totalArea) : null,
+      address: parsed.address || null,
+      roomCount: parsed.roomCount ? Number(parsed.roomCount) : 0,
+      planTypes: Array.isArray(parsed.planTypes) ? parsed.planTypes : [],
+      rooms: Array.isArray(parsed.rooms)
+        ? parsed.rooms.map((room: any) => ({
+            name: String(room.name || ''),
+            type: room.type || null,
+            area: room.area ? Number(room.area) : null,
+            planType: (room.planType || 'original') as 'original' | 'renovated' | 'both',
+            source: String(room.source || ''),
+          }))
+        : [],
+    }
+  } catch (err) {
+    console.error('[AI] Failed to parse structure JSON:', jsonStr.substring(0, 500))
+    throw new Error('ИИ вернул некорректный формат данных. Попробуйте снова.')
+  }
+
+  // Validate structure
+  if (!structure.rooms || structure.rooms.length === 0) {
+    throw new Error('ИИ не смог извлечь информацию о помещениях. Проверьте качество изображений планов.')
+  }
+
+  console.log(
+    `[AI] Extracted structure: ${structure.rooms.length} rooms, total area: ${structure.totalArea || 'N/A'} m²`
+  )
+
+  return structure
+}
+
 // ========== PRODUCT PARSING FROM URLs ==========
 
 export interface ParsedProduct {
