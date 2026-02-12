@@ -317,6 +317,69 @@ function createTables(db: DatabaseType): void {
     )
   `)
 
+  // ========== AI GENERATION TABLES ==========
+
+  // Create estimate_generation_tasks table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS estimate_generation_tasks (
+      id TEXT PRIMARY KEY,
+      estimate_id TEXT,
+      user_id TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
+      current_stage TEXT,
+      progress_percent INTEGER DEFAULT 0 CHECK(progress_percent >= 0 AND progress_percent <= 100),
+      error_message TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (estimate_id) REFERENCES estimates(id) ON DELETE SET NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `)
+
+  // Create generation_intermediate_data table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS generation_intermediate_data (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      stage TEXT NOT NULL,
+      data_type TEXT NOT NULL,
+      data_json TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (task_id) REFERENCES estimate_generation_tasks(id) ON DELETE CASCADE
+    )
+  `)
+
+  // Create pdf_page_classifications table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS pdf_page_classifications (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      page_number INTEGER NOT NULL,
+      page_type TEXT NOT NULL CHECK(page_type IN ('plan', 'wall_layout', 'specification', 'visualization', 'other')),
+      room_name TEXT,
+      image_data_url TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (task_id) REFERENCES estimate_generation_tasks(id) ON DELETE CASCADE
+    )
+  `)
+
+  // Create extracted_room_data table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS extracted_room_data (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      room_name TEXT NOT NULL,
+      room_type TEXT,
+      area REAL,
+      wall_area REAL,
+      floor_area REAL,
+      ceiling_area REAL,
+      extracted_data_json TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (task_id) REFERENCES estimate_generation_tasks(id) ON DELETE CASCADE
+    )
+  `)
+
   // Migration: add master_password column if not exists
   const estimateColumns = db.prepare("PRAGMA table_info(estimates)").all() as { name: string }[]
   if (!estimateColumns.some(col => col.name === 'master_password')) {
@@ -351,6 +414,17 @@ function createTables(db: DatabaseType): void {
     CREATE INDEX IF NOT EXISTS idx_saved_act_items_act ON saved_act_items(act_id);
     CREATE INDEX IF NOT EXISTS idx_saved_act_items_item ON saved_act_items(item_id);
     CREATE INDEX IF NOT EXISTS idx_saved_act_items_section ON saved_act_items(section_id);
+    CREATE INDEX IF NOT EXISTS idx_generation_tasks_user ON estimate_generation_tasks(user_id);
+    CREATE INDEX IF NOT EXISTS idx_generation_tasks_estimate ON estimate_generation_tasks(estimate_id);
+    CREATE INDEX IF NOT EXISTS idx_generation_tasks_status ON estimate_generation_tasks(status);
+    CREATE INDEX IF NOT EXISTS idx_intermediate_data_task ON generation_intermediate_data(task_id);
+    CREATE INDEX IF NOT EXISTS idx_intermediate_data_task_stage ON generation_intermediate_data(task_id, stage);
+    CREATE INDEX IF NOT EXISTS idx_intermediate_data_task_type ON generation_intermediate_data(task_id, data_type);
+    CREATE INDEX IF NOT EXISTS idx_page_classifications_task ON pdf_page_classifications(task_id);
+    CREATE INDEX IF NOT EXISTS idx_page_classifications_task_type ON pdf_page_classifications(task_id, page_type);
+    CREATE INDEX IF NOT EXISTS idx_page_classifications_task_room ON pdf_page_classifications(task_id, room_name);
+    CREATE INDEX IF NOT EXISTS idx_extracted_room_data_task ON extracted_room_data(task_id);
+    CREATE INDEX IF NOT EXISTS idx_extracted_room_data_task_room ON extracted_room_data(task_id, room_name);
   `)
 }
 

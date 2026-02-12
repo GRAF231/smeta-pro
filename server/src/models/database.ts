@@ -645,3 +645,69 @@ export const materialQueries: Record<string, Statement> = {
   deleteByEstimateId: db.prepare('DELETE FROM estimate_materials WHERE estimate_id = ?'),
   getMaxSortOrder: db.prepare('SELECT COALESCE(MAX(sort_order), 0) as max_order FROM estimate_materials WHERE estimate_id = ?'),
 }
+
+// ========== AI GENERATION QUERIES ==========
+
+// Generation task queries
+export const generationTaskQueries: Record<string, Statement> = {
+  findById: db.prepare('SELECT * FROM estimate_generation_tasks WHERE id = ?'),
+  findByUserId: db.prepare('SELECT * FROM estimate_generation_tasks WHERE user_id = ? ORDER BY created_at DESC'),
+  findByEstimateId: db.prepare('SELECT * FROM estimate_generation_tasks WHERE estimate_id = ? ORDER BY created_at DESC'),
+  create: db.prepare(`
+    INSERT INTO estimate_generation_tasks (id, estimate_id, user_id, status, current_stage, progress_percent, error_message)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `),
+  updateStatus: db.prepare(`
+    UPDATE estimate_generation_tasks 
+    SET status = ?, current_stage = ?, progress_percent = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `),
+  setError: db.prepare(`
+    UPDATE estimate_generation_tasks 
+    SET status = 'failed', error_message = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `),
+  complete: db.prepare(`
+    UPDATE estimate_generation_tasks 
+    SET status = 'completed', estimate_id = ?, current_stage = NULL, progress_percent = 100, updated_at = datetime('now')
+    WHERE id = ?
+  `),
+}
+
+// Intermediate data queries
+export const intermediateDataQueries: Record<string, Statement> = {
+  findByTaskId: db.prepare('SELECT * FROM generation_intermediate_data WHERE task_id = ? ORDER BY created_at'),
+  findByTaskAndStage: db.prepare('SELECT * FROM generation_intermediate_data WHERE task_id = ? AND stage = ? ORDER BY created_at'),
+  findByTaskAndType: db.prepare('SELECT * FROM generation_intermediate_data WHERE task_id = ? AND data_type = ? ORDER BY created_at'),
+  findById: db.prepare('SELECT * FROM generation_intermediate_data WHERE id = ?'),
+  save: db.prepare(`
+    INSERT INTO generation_intermediate_data (id, task_id, stage, data_type, data_json)
+    VALUES (?, ?, ?, ?, ?)
+  `),
+  deleteByTask: db.prepare('DELETE FROM generation_intermediate_data WHERE task_id = ?'),
+}
+
+// Page classification queries
+export const pageClassificationQueries: Record<string, Statement> = {
+  findByTaskId: db.prepare('SELECT * FROM pdf_page_classifications WHERE task_id = ? ORDER BY page_number'),
+  findByTaskAndType: db.prepare('SELECT * FROM pdf_page_classifications WHERE task_id = ? AND page_type = ? ORDER BY page_number'),
+  findByTaskAndRoom: db.prepare('SELECT * FROM pdf_page_classifications WHERE task_id = ? AND room_name = ? ORDER BY page_number'),
+  findById: db.prepare('SELECT * FROM pdf_page_classifications WHERE id = ?'),
+  saveClassification: db.prepare(`
+    INSERT INTO pdf_page_classifications (id, task_id, page_number, page_type, room_name, image_data_url)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `),
+  deleteByTask: db.prepare('DELETE FROM pdf_page_classifications WHERE task_id = ?'),
+}
+
+// Extracted room data queries
+export const extractedRoomDataQueries: Record<string, Statement> = {
+  findByTaskId: db.prepare('SELECT * FROM extracted_room_data WHERE task_id = ? ORDER BY room_name'),
+  findByTaskAndRoom: db.prepare('SELECT * FROM extracted_room_data WHERE task_id = ? AND room_name = ?'),
+  findById: db.prepare('SELECT * FROM extracted_room_data WHERE id = ?'),
+  saveRoomData: db.prepare(`
+    INSERT INTO extracted_room_data (id, task_id, room_name, room_type, area, wall_area, floor_area, ceiling_area, extracted_data_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `),
+  deleteByTask: db.prepare('DELETE FROM extracted_room_data WHERE task_id = ?'),
+}

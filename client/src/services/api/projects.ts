@@ -146,5 +146,29 @@ export const projectsApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 360000,
     }),
+  
+  // Test Page Classification
+  testPageClassification: (formData: FormData) =>
+    api.post<{
+      taskId: string
+      totalPages: number
+      classifications: Array<{
+        pageNumber: number
+        pageType: 'plan' | 'wall_layout' | 'specification' | 'visualization' | 'other'
+        roomName: string | null
+      }>
+      savedClassifications: Array<{
+        id: string
+        task_id: string
+        page_number: number
+        page_type: string
+        room_name: string | null
+        image_data_url: string | null
+        created_at: string
+      }>
+    }>('/projects/test-classification', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 300000,
+    }),
 }
 

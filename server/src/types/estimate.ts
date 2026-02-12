@@ -501,3 +501,61 @@ export interface UploadActImageInput {
   data: string
 }
 
+// ========== AI GENERATION TYPES ==========
+
+/**
+ * Задача генерации сметы из базы данных
+ */
+export interface GenerationTaskRow {
+  id: string
+  estimate_id: string | null
+  user_id: string
+  status: 'pending' | 'processing' | 'completed' | 'failed'
+  current_stage: string | null
+  progress_percent: number
+  error_message: string | null
+  created_at: string
+  updated_at: string
+}
+
+/**
+ * Промежуточные данные генерации из базы данных
+ */
+export interface IntermediateDataRow {
+  id: string
+  task_id: string
+  stage: string
+  data_type: string
+  data_json: string
+  created_at: string
+}
+
+/**
+ * Классификация страницы PDF из базы данных
+ */
+export interface PageClassificationRow {
+  id: string
+  task_id: string
+  page_number: number
+  page_type: 'plan' | 'wall_layout' | 'specification' | 'visualization' | 'other'
+  room_name: string | null
+  image_data_url: string | null
+  created_at: string
+}
+
+/**
+ * Извлеченные данные помещения из базы данных
+ */
+export interface ExtractedRoomDataRow {
+  id: string
+  task_id: string
+  room_name: string
+  room_type: string | null
+  area: number | null
+  wall_area: number | null
+  floor_area: number | null
+  ceiling_area: number | null
+  extracted_data_json: string
+  created_at: string
+}
+

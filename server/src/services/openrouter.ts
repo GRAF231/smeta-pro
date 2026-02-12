@@ -294,6 +294,175 @@ export async function generateEstimateFromPDF(
   return estimate
 }
 
+// ========== PAGE CLASSIFICATION ==========
+
+export interface PageClassification {
+  pageNumber: number
+  pageType: 'plan' | 'wall_layout' | 'specification' | 'visualization' | 'other'
+  roomName: string | null
+}
+
+const PAGE_CLASSIFICATION_PROMPT = `Ты — эксперт по анализу дизайн-проектов. Твоя задача — классифицировать страницы PDF дизайн-проекта.
+
+## Типы страниц:
+- **plan** — план помещения с размерами (вид сверху)
+- **wall_layout** — развертка стен (вид стен с размерами и материалами)
+- **specification** — спецификация материалов (таблицы, списки материалов)
+- **visualization** — 3D визуализация или рендер
+- **other** — прочее (титульный лист, обложка, узлы, детали и т.д.)
+
+## Инструкции:
+1. Проанализируй каждую страницу и определи её тип
+2. Если страница относится к конкретному помещению (кухня, спальня, ванная и т.д.), укажи название помещения в поле roomName
+3. Для титульных страниц, обложек, узлов используй тип "other"
+4. Верни JSON массив с классификацией для каждой страницы в том же порядке
+
+## ВАЖНО: Ответ СТРОГО в формате JSON без дополнительных текстов. Только валидный JSON.
+
+Формат ответа:
+[
+  {
+    "pageNumber": 1,
+    "pageType": "other",
+    "roomName": null
+  },
+  {
+    "pageNumber": 2,
+    "pageType": "plan",
+    "roomName": "Кухня"
+  }
+]`
+
+/**
+ * Классифицировать страницы PDF через ИИ
+ * @param pageThumbnails Массив data URLs миниатюр страниц
+ * @returns Массив классификаций
+ */
+export async function classifyPages(
+  pageThumbnails: string[]
+): Promise<PageClassification[]> {
+  const apiKey = getApiKey()
+
+  if (pageThumbnails.length === 0) {
+    return []
+  }
+
+  // Build multimodal content: thumbnails + instruction
+  const content: MessageContent[] = []
+
+  content.push({
+    type: 'text',
+    text: `Вот ${pageThumbnails.length} страниц дизайн-проекта. Классифицируй каждую страницу по типу и определи к какому помещению она относится (если применимо).`,
+  })
+
+  // Add all thumbnails
+  for (let i = 0; i < pageThumbnails.length; i++) {
+    content.push({
+      type: 'image_url',
+      image_url: {
+        url: pageThumbnails[i],
+      },
+    })
+    content.push({
+      type: 'text',
+      text: `Страница ${i + 1}`,
+    })
+  }
+
+  content.push({
+    type: 'text',
+    text: '\nВерни JSON массив с классификацией для каждой страницы. Ответ — только валидный JSON.',
+  })
+
+  const requestBodyStr = JSON.stringify({
+    model: 'google/gemini-2.5-flash',
+    messages: [
+      {
+        role: 'system',
+        content: PAGE_CLASSIFICATION_PROMPT,
+      },
+      {
+        role: 'user',
+        content,
+      },
+    ],
+    temperature: 0.1, // Low temperature for consistent classification
+    max_tokens: 8000,
+  })
+
+  const requestBodyBuffer = Buffer.from(requestBodyStr, 'utf-8')
+  const sizeMB = (requestBodyBuffer.length / (1024 * 1024)).toFixed(1)
+  console.log(
+    `[AI] Sending ${pageThumbnails.length} page thumbnails for classification (request size: ${sizeMB} MB)...`
+  )
+
+  const responseText = await makeOpenRouterRequest(apiKey, requestBodyBuffer)
+
+  let response: {
+    choices?: Array<{
+      message?: {
+        content?: string
+      }
+    }>
+    error?: {
+      message?: string
+    }
+  }
+
+  try {
+    response = JSON.parse(responseText)
+  } catch {
+    throw new Error('Не удалось распарсить ответ от OpenRouter API')
+  }
+
+  if (response.error) {
+    throw new Error(`OpenRouter API: ${response.error.message || 'Неизвестная ошибка'}`)
+  }
+
+  const responseContent = response.choices?.[0]?.message?.content
+  if (!responseContent) {
+    throw new Error('ИИ не вернул ответ. Попробуйте снова.')
+  }
+
+  // Extract JSON from the response
+  let jsonStr = responseContent.trim()
+  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (jsonMatch) {
+    jsonStr = jsonMatch[1].trim()
+  }
+
+  let classifications: PageClassification[]
+  try {
+    const parsed = JSON.parse(jsonStr)
+    // Handle both array and object with array property
+    const array = Array.isArray(parsed) ? parsed : parsed.classifications || parsed.pages || []
+    
+    classifications = array.map((item: any, index: number) => ({
+      pageNumber: Number(item.pageNumber) || index + 1,
+      pageType: (item.pageType || 'other') as PageClassification['pageType'],
+      roomName: item.roomName || null,
+    }))
+  } catch (err) {
+    console.error('[AI] Failed to parse classification JSON:', jsonStr.substring(0, 500))
+    throw new Error('ИИ вернул некорректный формат данных. Попробуйте снова.')
+  }
+
+  // Ensure we have classifications for all pages
+  while (classifications.length < pageThumbnails.length) {
+    classifications.push({
+      pageNumber: classifications.length + 1,
+      pageType: 'other',
+      roomName: null,
+    })
+  }
+
+  console.log(
+    `[AI] Classified ${classifications.length} pages: ${classifications.filter(c => c.pageType !== 'other').length} non-other pages`
+  )
+
+  return classifications
+}
+
 // ========== PRODUCT PARSING FROM URLs ==========
 
 export interface ParsedProduct {

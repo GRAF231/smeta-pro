@@ -10,4 +10,8 @@ export * from './view.repository'
 export * from './version.repository'
 export * from './act.repository'
 export * from './material.repository'
+export * from './generation-task.repository'
+export * from './intermediate-data.repository'
+export * from './page-classification.repository'
+export * from './room-data.repository'
 
