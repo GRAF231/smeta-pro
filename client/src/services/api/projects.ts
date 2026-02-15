@@ -204,5 +204,85 @@ export const projectsApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 300000,
     }),
+  
+  // Test Room Data Extraction
+  testRoomDataExtraction: (formData: FormData) =>
+    api.post<{
+      taskId: string
+      totalPages: number
+      roomsProcessed: number
+      results: Array<{
+        roomName: string
+        extractedData: {
+          wallMaterials: Array<{
+            material: string
+            description: string
+            area?: number
+          }>
+          floorMaterial: {
+            material: string
+            description: string
+            area?: number
+          } | null
+          ceilingMaterial: {
+            material: string
+            description: string
+            area?: number
+          } | null
+          electrical: {
+            outlets: number
+            switches: number
+            fixtures: number
+            locations?: Array<{
+              type: 'outlet' | 'switch' | 'fixture'
+              description: string
+            }>
+          }
+          openings: Array<{
+            type: 'door' | 'window' | 'arch'
+            width?: number
+            height?: number
+            description: string
+          }>
+          dimensions: {
+            length?: number
+            width?: number
+            height?: number
+            area?: number
+          }
+          notes?: string[]
+        }
+        savedRoomDataId: string
+        highQualityRegionsCount: number
+        materialBills: Array<{
+          title: string
+          roomName?: string
+          items: Array<{
+            position: number
+            name: string
+            unit: string
+            quantity: number | null
+            article?: string
+            brand?: string
+            manufacturer?: string
+            description?: string
+          }>
+        }>
+        materialBillImagesCount: number
+      }>
+      highQualityRegions: Array<{
+        roomName: string
+        index: number
+        image: string
+      }>
+      materialBillImages: Array<{
+        roomName: string
+        index: number
+        image: string
+      }>
+    }>('/projects/test-room-data-extraction', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 600000, // 10 minutes timeout for room data extraction
+    }),
 }
 

@@ -4,6 +4,7 @@ import { estimateService } from '../services/estimate.service'
 import { pdfGenerationService } from '../services/pdf-generation.service'
 import { pageClassificationService } from '../services/page-classification.service'
 import { structureAnalysisService } from '../services/structure-analysis.service'
+import { roomDataExtractionService } from '../services/room-data-extraction.service'
 import { generationTaskRepository } from '../repositories/generation-task.repository'
 import { requireString } from '../utils/validation'
 import { asyncHandler } from '../middleware/errorHandler'
@@ -376,6 +377,145 @@ export class EstimateController {
     } catch (error) {
       generationTaskRepository.setError(taskId, (error as Error).message)
       generationTaskRepository.updateStatus(taskId, 'failed', 'stage_2', 0)
+      throw error
+    }
+  })
+
+  /**
+   * Тестировать извлечение данных помещений
+   */
+  testRoomDataExtraction = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const pdfFile = (req as any).file
+    if (!pdfFile) {
+      throw new Error('PDF файл обязателен')
+    }
+
+    const roomName = req.body.roomName as string | undefined // Optional: extract specific room
+
+    // Create a test task
+    const taskId = generationTaskRepository.create(
+      req.user!.id,
+      'processing',
+      'stage_4',
+      0
+    )
+
+    try {
+      // Convert PDF to images
+      const parser = new PDFParse({ data: new Uint8Array(pdfFile.buffer) })
+      let pageDataUrls: string[]
+
+      try {
+        const screenshotResult = await parser.getScreenshot({
+          imageDataUrl: false,
+          imageBuffer: true,
+          desiredWidth: 1600, // Higher resolution for better data extraction
+        })
+
+        if (!screenshotResult.pages || screenshotResult.pages.length === 0) {
+          throw new Error('Не удалось обработать PDF. Убедитесь, что файл не поврежден.')
+        }
+
+        console.log(`[TestRoomDataExtraction] Converting ${screenshotResult.pages.length} pages to JPEG...`)
+
+        pageDataUrls = []
+        for (let i = 0; i < screenshotResult.pages.length; i++) {
+          const page = screenshotResult.pages[i]
+          const jpegBuffer = await sharp(Buffer.from(page.data))
+            .jpeg({ quality: 75 }) // Higher quality for better data extraction
+            .toBuffer()
+          pageDataUrls.push(`data:image/jpeg;base64,${jpegBuffer.toString('base64')}`)
+          ;(page as any).data = null
+        }
+      } catch (err) {
+        console.error('PDF screenshot error:', err)
+        throw new Error('Ошибка обработки PDF файла.')
+      } finally {
+        await parser.destroy().catch(() => {})
+      }
+
+      // Step 1: Classify pages
+      console.log(`[TestRoomDataExtraction] Classifying ${pageDataUrls.length} pages...`)
+      await pageClassificationService.classifyPages(taskId, pageDataUrls)
+
+      // Step 2: Analyze structure to get rooms
+      console.log(`[TestRoomDataExtraction] Analyzing structure...`)
+      const classifications = pageClassificationService.getClassifications(taskId)
+      const titlePages: string[] = []
+      const planPages: string[] = []
+
+      for (const classification of classifications) {
+        const pageImage = classification.image_data_url
+        if (!pageImage) continue
+
+        if (classification.page_type === 'other' && classification.page_number <= 3) {
+          titlePages.push(pageImage)
+        } else if (classification.page_type === 'plan') {
+          planPages.push(pageImage)
+        }
+      }
+
+      if (planPages.length === 0) {
+        // Use all pages as potential plans
+        for (const classification of classifications) {
+          if (classification.image_data_url) {
+            planPages.push(classification.image_data_url)
+          }
+        }
+      }
+
+      if (planPages.length === 0) {
+        throw new Error('Не найдено планов помещений в PDF.')
+      }
+
+      await structureAnalysisService.analyzeProjectStructure(taskId, titlePages, planPages)
+
+      // Step 3: Extract room data
+      let results
+      if (roomName) {
+        // Extract data for specific room
+        console.log(`[TestRoomDataExtraction] Extracting data for room "${roomName}"...`)
+        const result = await roomDataExtractionService.extractRoomData(taskId, roomName)
+        results = [result]
+      } else {
+        // Extract data for all rooms
+        console.log(`[TestRoomDataExtraction] Extracting data for all rooms...`)
+        results = await roomDataExtractionService.extractAllRoomsData(taskId)
+      }
+
+      // Update task status
+      generationTaskRepository.updateStatus(taskId, 'completed', 'stage_4', 100)
+
+      sendSuccess(res, {
+        taskId,
+        totalPages: pageDataUrls.length,
+        roomsProcessed: results.length,
+        results: results.map((r) => ({
+          roomName: r.roomName,
+          extractedData: r.extractedData,
+          savedRoomDataId: r.savedRoomDataId,
+          highQualityRegionsCount: r.highQualityRegions.length,
+          materialBills: r.materialBills,
+          materialBillImagesCount: r.materialBillImages.length,
+        })),
+        highQualityRegions: results.flatMap((r) =>
+          r.highQualityRegions.map((region, idx) => ({
+            roomName: r.roomName,
+            index: idx,
+            image: region,
+          }))
+        ),
+        materialBillImages: results.flatMap((r) =>
+          r.materialBillImages.map((image, idx) => ({
+            roomName: r.roomName,
+            index: idx,
+            image: image,
+          }))
+        ),
+      })
+    } catch (error) {
+      generationTaskRepository.setError(taskId, (error as Error).message)
+      generationTaskRepository.updateStatus(taskId, 'failed', 'stage_4', 0)
       throw error
     }
   })

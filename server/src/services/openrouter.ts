@@ -1425,3 +1425,704 @@ export async function parseProductsFromUrls(urls: string[]): Promise<(ParsedProd
 
   return results
 }
+
+// ========== ROOM DATA EXTRACTION ==========
+
+export interface ImportantRegion {
+  x: number
+  y: number
+  width: number
+  height: number
+  type: 'table' | 'specification' | 'dimensions' | 'legend' | 'notes'
+  description: string
+}
+
+export interface RoomExtractionResult {
+  wallMaterials: Array<{
+    material: string
+    description: string
+    area?: number
+  }>
+  floorMaterial: {
+    material: string
+    description: string
+    area?: number
+  } | null
+  ceilingMaterial: {
+    material: string
+    description: string
+    area?: number
+  } | null
+  electrical: {
+    outlets: number
+    switches: number
+    fixtures: number
+    locations?: Array<{
+      type: 'outlet' | 'switch' | 'fixture'
+      description: string
+    }>
+  }
+  openings: Array<{
+    type: 'door' | 'window' | 'arch'
+    width?: number
+    height?: number
+    description: string
+  }>
+  dimensions: {
+    length?: number
+    width?: number
+    height?: number
+    area?: number
+  }
+  notes?: string[]
+}
+
+export interface MaterialBillItem {
+  position: number // Позиция в таблице
+  name: string // Наименование материала
+  unit: string // Единица измерения (м², м.п., шт и т.д.)
+  quantity: number | null // Количество
+  article?: string // Артикул
+  brand?: string // Марка/Бренд
+  manufacturer?: string // Производитель
+  description?: string // Описание/Примечания
+}
+
+export interface MaterialBill {
+  title: string // Название таблицы (например, "Ведомость материалов")
+  roomName?: string // К какому помещению относится
+  items: MaterialBillItem[]
+}
+
+const IMPORTANT_REGIONS_DETECTION_PROMPT = `Ты — эксперт по анализу архитектурных чертежей и разверток помещений. Твоя задача — найти важные области с точными числами, таблицами и спецификациями.
+
+## КРИТИЧЕСКИ ВАЖНО - ПРИОРИТЕТ #1: ТАБЛИЦЫ С ВЕДОМОСТЯМИ МАТЕРИАЛОВ!
+1. **В ПЕРВУЮ ОЧЕРЕДЬ найди таблицы с ведомостями материалов** — это самые важные таблицы в дизайн-проекте! Они обычно содержат:
+   - Названия материалов отделки (стены, пол, потолок)
+   - Количество/площади материалов
+   - Артикулы, марки, производителей
+   - Единицы измерения
+   - Могут называться: "Ведомость материалов", "Спецификация материалов", "Ведомость отделочных материалов", "Таблица материалов"
+2. **Включи ВСЮ таблицу целиком**: все колонки (№, Наименование, Ед. изм., Количество, Артикул, Марка, Производитель и т.д.), все строки, включая заголовки и итоги.
+3. **Координаты должны быть точными**: x, y — верхний левый угол области, width и height — полные размеры области.
+4. **Типы областей** (в порядке приоритета):
+   - "table" — **ПРИОРИТЕТ #1**: таблицы с ведомостями материалов, спецификациями материалов, площадями, размерами
+   - "specification" — текстовые спецификации материалов с точными данными
+   - "dimensions" — области с размерами проемов, помещений (окна, двери, арки)
+   - "legend" — легенды с обозначениями материалов, элементов
+   - "notes" — примечания с техническими данными
+
+## Инструкции:
+1. Проанализируй каждое изображение помещения (развертку, план).
+2. **В ПЕРВУЮ ОЧЕРЕДЬ найди таблицы с ведомостями материалов** — они критически важны!
+3. Затем найди все остальные области с точными данными: спецификации, размеры, легенды, примечания.
+4. Для каждой области определи её расположение (x, y, width, height в пикселях) и тип.
+5. Убедись, что координаты включают ВСЮ область целиком.
+
+## ВАЖНО: Ответ СТРОГО в формате JSON без дополнительных текстов. Только валидный JSON.
+
+Формат ответа:
+[
+  {
+    "pageIndex": 0,
+    "regions": [
+      {
+        "x": 100,
+        "y": 200,
+        "width": 800,
+        "height": 400,
+        "type": "table",
+        "description": "Таблица со спецификацией материалов отделки стен"
+      },
+      {
+        "x": 50,
+        "y": 1500,
+        "width": 600,
+        "height": 300,
+        "type": "dimensions",
+        "description": "Размеры проемов (двери, окна)"
+      }
+    ]
+  }
+]`
+
+const ROOM_DATA_EXTRACTION_PROMPT = `Ты — эксперт по анализу дизайн-проектов помещений. Твоя задача — извлечь детальную информацию о материалах отделки, коммуникациях и размерах помещения.
+
+## КРИТИЧЕСКИ ВАЖНО:
+1. **Используй ТОЛЬКО данные из изображений** — не выдумывай информацию.
+2. **Извлекай точные числа** из таблиц, спецификаций и размеров.
+3. **Если информация не указана** — ставь null или пустой массив.
+
+## Инструкции:
+1. **Материалы отделки стен**: найди в спецификациях и таблицах материалы для стен (обои, краска, плитка, панели и т.д.). Укажи материал и описание. Если указана площадь — извлеки её.
+2. **Напольное покрытие**: найди тип напольного покрытия (ламинат, паркет, плитка, линолеум и т.д.). Если указана площадь — извлеки её.
+3. **Потолок**: найди тип потолка (натяжной, подвесной, покраска и т.д.). Если указана площадь — извлеки её.
+4. **Электрика**: подсчитай количество розеток, выключателей, светильников. Если указаны их расположения — опиши.
+5. **Проемы**: найди все проемы (двери, окна, арки). Извлеки их размеры (ширина, высота) если указаны.
+6. **Размеры помещения**: извлеки длину, ширину, высоту, площадь если указаны в таблицах или на планах.
+
+## ВАЖНО: Ответ СТРОГО в формате JSON без дополнительных текстов. Только валидный JSON.
+
+Формат ответа:
+{
+  "wallMaterials": [
+    {
+      "material": "Обои виниловые",
+      "description": "Обои виниловые, фактурные, цвет бежевый",
+      "area": 25.5
+    }
+  ],
+  "floorMaterial": {
+    "material": "Ламинат",
+    "description": "Ламинат 32 класса, цвет дуб светлый",
+    "area": 12.3
+  },
+  "ceilingMaterial": {
+    "material": "Натяжной потолок",
+    "description": "Натяжной потолок ПВХ, матовый, белый",
+    "area": 12.3
+  },
+  "electrical": {
+    "outlets": 4,
+    "switches": 2,
+    "fixtures": 3,
+    "locations": [
+      {
+        "type": "outlet",
+        "description": "Розетка у стены слева от окна"
+      }
+    ]
+  },
+  "openings": [
+    {
+      "type": "door",
+      "width": 0.9,
+      "height": 2.1,
+      "description": "Дверь межкомнатная, открывается наружу"
+    },
+    {
+      "type": "window",
+      "width": 1.5,
+      "height": 1.4,
+      "description": "Окно пластиковое, двухстворчатое"
+    }
+  ],
+  "dimensions": {
+    "length": 4.2,
+    "width": 2.9,
+    "height": 2.7,
+    "area": 12.18
+  },
+  "notes": [
+    "Установка плинтуса по периметру",
+    "Демонтаж старой отделки"
+  ]
+}`
+
+/**
+ * Обнаружить важные области с точными данными на страницах помещения
+ * @param roomPages Массив data URLs изображений помещения (развертки, планы)
+ * @returns Информация о важных областях на каждой странице
+ */
+export async function detectImportantRegions(
+  roomPages: string[],
+  imageDimensions?: Array<{ width: number; height: number }>
+): Promise<Array<{ pageIndex: number; regions: ImportantRegion[] }>> {
+  const apiKey = getApiKey()
+
+  if (roomPages.length === 0) {
+    return []
+  }
+
+  const content: MessageContent[] = []
+
+  // Add image dimensions if provided
+  let dimensionsInfo = ''
+  if (imageDimensions && imageDimensions.length === roomPages.length) {
+    dimensionsInfo = `\n\nВАЖНО: Размеры изображений:\n${imageDimensions
+      .map((dim, idx) => `Изображение ${idx + 1}: ${dim.width}x${dim.height} пикселей`)
+      .join('\n')}\n\nКоординаты должны быть указаны относительно этих размеров. x=0, y=0 — это верхний левый угол изображения.`
+  }
+
+  content.push({
+    type: 'text',
+    text: `Найди важные области с точными данными (таблицы, спецификации, размеры) на ${roomPages.length} изображениях помещения. Для каждой области определи координаты (x, y, width, height в пикселях) и тип.${dimensionsInfo}`,
+  })
+
+  for (let i = 0; i < roomPages.length; i++) {
+    content.push({
+      type: 'image_url',
+      image_url: {
+        url: roomPages[i],
+      },
+    })
+    const dimInfo = imageDimensions && imageDimensions[i]
+      ? ` (${imageDimensions[i].width}x${imageDimensions[i].height}px)`
+      : ''
+    content.push({
+      type: 'text',
+      text: `Изображение ${i + 1}${dimInfo}`,
+    })
+  }
+
+  content.push({
+    type: 'text',
+    text: '\nВерни JSON массив с информацией о важных областях для каждого изображения.',
+  })
+
+  const requestBodyStr = JSON.stringify({
+    model: 'google/gemini-2.5-flash',
+    messages: [
+      {
+        role: 'system',
+        content: IMPORTANT_REGIONS_DETECTION_PROMPT,
+      },
+      {
+        role: 'user',
+        content,
+      },
+    ],
+    temperature: 0.1,
+    max_tokens: 4000,
+  })
+
+  const requestBodyBuffer = Buffer.from(requestBodyStr, 'utf-8')
+  console.log(`[AI] Detecting important regions on ${roomPages.length} room pages...`)
+
+  const responseText = await makeOpenRouterRequest(apiKey, requestBodyBuffer)
+
+  let response: {
+    choices?: Array<{
+      message?: {
+        content?: string
+      }
+    }>
+    error?: {
+      message?: string
+    }
+  }
+
+  try {
+    response = JSON.parse(responseText)
+  } catch {
+    throw new Error('Не удалось распарсить ответ от OpenRouter API')
+  }
+
+  if (response.error) {
+    throw new Error(`OpenRouter API: ${response.error.message || 'Неизвестная ошибка'}`)
+  }
+
+  const responseContent = response.choices?.[0]?.message?.content
+  if (!responseContent) {
+    throw new Error('ИИ не вернул ответ. Попробуйте снова.')
+  }
+
+  let jsonStr = responseContent.trim()
+  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (jsonMatch) {
+    jsonStr = jsonMatch[1].trim()
+  }
+
+  let results: Array<{ pageIndex: number; regions: ImportantRegion[] }>
+  try {
+    const parsed = JSON.parse(jsonStr)
+    results = Array.isArray(parsed)
+      ? parsed.map((item: any) => ({
+          pageIndex: Number(item.pageIndex) || 0,
+          regions: Array.isArray(item.regions)
+            ? item.regions.map((region: any) => ({
+                x: Number(region.x) || 0,
+                y: Number(region.y) || 0,
+                width: Number(region.width) || 0,
+                height: Number(region.height) || 0,
+                type: (region.type || 'table') as ImportantRegion['type'],
+                description: String(region.description || ''),
+              }))
+            : [],
+        }))
+      : []
+  } catch (err) {
+    console.error('[AI] Failed to parse regions detection JSON:', jsonStr.substring(0, 500))
+    throw new Error('ИИ вернул некорректный формат данных при обнаружении важных областей.')
+  }
+
+  console.log(
+    `[AI] Detected ${results.reduce((sum, r) => sum + r.regions.length, 0)} important regions on ${results.length} pages`
+  )
+  return results
+}
+
+/**
+ * Извлечь данные помещения из изображений
+ * @param roomName Название помещения
+ * @param fullPageImages Массив data URLs полных изображений помещения (миниатюры для контекста)
+ * @param highQualityRegions Массив data URLs важных областей в высоком разрешении
+ * @returns Извлеченные данные помещения
+ */
+export async function extractRoomData(
+  roomName: string,
+  fullPageImages: string[],
+  highQualityRegions: string[]
+): Promise<RoomExtractionResult> {
+  const apiKey = getApiKey()
+
+  if (fullPageImages.length === 0 && highQualityRegions.length === 0) {
+    throw new Error('Необходимо предоставить хотя бы одно изображение помещения')
+  }
+
+  const content: MessageContent[] = []
+
+  content.push({
+    type: 'text',
+    text: `Извлеки детальную информацию о помещении "${roomName}" из изображений.`,
+  })
+
+  // Add full page images first (for context, thumbnails)
+  if (fullPageImages.length > 0) {
+    content.push({
+      type: 'text',
+      text: '\n=== ПОЛНЫЕ ИЗОБРАЖЕНИЯ ПОМЕЩЕНИЯ (для контекста) ===',
+    })
+    for (let i = 0; i < fullPageImages.length; i++) {
+      content.push({
+        type: 'image_url',
+        image_url: {
+          url: fullPageImages[i],
+        },
+      })
+      content.push({
+        type: 'text',
+        text: `Изображение ${i + 1}`,
+      })
+    }
+  }
+
+  // Add high-quality regions (for precise data extraction)
+  if (highQualityRegions.length > 0) {
+    content.push({
+      type: 'text',
+      text: '\n=== ВАЖНЫЕ ОБЛАСТИ В ВЫСОКОМ РАЗРЕШЕНИИ (для точного извлечения данных) ===\nВнимательно извлеки точные значения из этих областей.',
+    })
+    for (let i = 0; i < highQualityRegions.length; i++) {
+      content.push({
+        type: 'image_url',
+        image_url: {
+          url: highQualityRegions[i],
+        },
+      })
+      content.push({
+        type: 'text',
+        text: `Важная область ${i + 1}`,
+      })
+    }
+  }
+
+  content.push({
+    type: 'text',
+    text: '\nВерни JSON с извлеченными данными помещения. Помни: используй ТОЛЬКО данные из изображений, не выдумывай числа!',
+  })
+
+  const requestBodyStr = JSON.stringify({
+    model: 'google/gemini-2.5-flash',
+    messages: [
+      {
+        role: 'system',
+        content: ROOM_DATA_EXTRACTION_PROMPT,
+      },
+      {
+        role: 'user',
+        content,
+      },
+    ],
+    temperature: 0.1,
+    max_tokens: 8000,
+  })
+
+  const requestBodyBuffer = Buffer.from(requestBodyStr, 'utf-8')
+  const sizeMB = (requestBodyBuffer.length / (1024 * 1024)).toFixed(1)
+  console.log(
+    `[AI] Extracting room data for "${roomName}": ${fullPageImages.length} full pages, ${highQualityRegions.length} high-quality regions (request size: ${sizeMB} MB)...`
+  )
+
+  const responseText = await makeOpenRouterRequest(apiKey, requestBodyBuffer)
+
+  let response: {
+    choices?: Array<{
+      message?: {
+        content?: string
+      }
+    }>
+    error?: {
+      message?: string
+    }
+  }
+
+  try {
+    response = JSON.parse(responseText)
+  } catch {
+    throw new Error('Не удалось распарсить ответ от OpenRouter API')
+  }
+
+  if (response.error) {
+    throw new Error(`OpenRouter API: ${response.error.message || 'Неизвестная ошибка'}`)
+  }
+
+  const responseContent = response.choices?.[0]?.message?.content
+  if (!responseContent) {
+    throw new Error('ИИ не вернул ответ. Попробуйте снова.')
+  }
+
+  let jsonStr = responseContent.trim()
+  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (jsonMatch) {
+    jsonStr = jsonMatch[1].trim()
+  }
+
+  let result: RoomExtractionResult
+  try {
+    const parsed = JSON.parse(jsonStr)
+    result = {
+      wallMaterials: Array.isArray(parsed.wallMaterials)
+        ? parsed.wallMaterials.map((m: any) => ({
+            material: String(m.material || ''),
+            description: String(m.description || ''),
+            area: m.area ? Number(m.area) : undefined,
+          }))
+        : [],
+      floorMaterial: parsed.floorMaterial
+        ? {
+            material: String(parsed.floorMaterial.material || ''),
+            description: String(parsed.floorMaterial.description || ''),
+            area: parsed.floorMaterial.area ? Number(parsed.floorMaterial.area) : undefined,
+          }
+        : null,
+      ceilingMaterial: parsed.ceilingMaterial
+        ? {
+            material: String(parsed.ceilingMaterial.material || ''),
+            description: String(parsed.ceilingMaterial.description || ''),
+            area: parsed.ceilingMaterial.area ? Number(parsed.ceilingMaterial.area) : undefined,
+          }
+        : null,
+      electrical: {
+        outlets: parsed.electrical?.outlets ? Number(parsed.electrical.outlets) : 0,
+        switches: parsed.electrical?.switches ? Number(parsed.electrical.switches) : 0,
+        fixtures: parsed.electrical?.fixtures ? Number(parsed.electrical.fixtures) : 0,
+        locations: Array.isArray(parsed.electrical?.locations)
+          ? parsed.electrical.locations.map((loc: any) => ({
+              type: (loc.type || 'outlet') as 'outlet' | 'switch' | 'fixture',
+              description: String(loc.description || ''),
+            }))
+          : undefined,
+      },
+      openings: Array.isArray(parsed.openings)
+        ? parsed.openings.map((op: any) => ({
+            type: (op.type || 'door') as 'door' | 'window' | 'arch',
+            width: op.width ? Number(op.width) : undefined,
+            height: op.height ? Number(op.height) : undefined,
+            description: String(op.description || ''),
+          }))
+        : [],
+      dimensions: parsed.dimensions
+        ? {
+            length: parsed.dimensions.length ? Number(parsed.dimensions.length) : undefined,
+            width: parsed.dimensions.width ? Number(parsed.dimensions.width) : undefined,
+            height: parsed.dimensions.height ? Number(parsed.dimensions.height) : undefined,
+            area: parsed.dimensions.area ? Number(parsed.dimensions.area) : undefined,
+          }
+        : {},
+      notes: Array.isArray(parsed.notes) ? parsed.notes.map((n: any) => String(n)) : undefined,
+    }
+  } catch (err) {
+    console.error('[AI] Failed to parse room extraction JSON:', jsonStr.substring(0, 500))
+    throw new Error('ИИ вернул некорректный формат данных. Попробуйте снова.')
+  }
+
+  console.log(
+    `[AI] Extracted room data for "${roomName}": ${result.wallMaterials.length} wall materials, ${result.openings.length} openings, ${result.electrical.outlets} outlets`
+  )
+
+  return result
+}
+
+const MATERIAL_BILL_EXTRACTION_PROMPT = `Ты — эксперт по анализу таблиц с ведомостями материалов из дизайн-проектов. Твоя задача — точно извлечь все данные из таблиц ведомостей материалов.
+
+## КРИТИЧЕСКИ ВАЖНО:
+1. **Извлеки ВСЕ строки из таблицы** — не пропускай ни одной позиции.
+2. **Используй ТОЛЬКО данные из таблицы** — не выдумывай информацию.
+3. **Сохрани точные значения**: названия материалов, количества, единицы измерения, артикулы, марки — всё ТОЧНО как написано в таблице.
+4. **Если в таблице несколько колонок** (№, Наименование, Ед. изм., Количество, Артикул, Марка, Производитель, Примечания) — извлеки данные из всех колонок.
+5. **Если какое-то поле пустое** — ставь null или не включай в результат.
+
+## Инструкции:
+1. Определи название таблицы (например, "Ведомость материалов", "Спецификация материалов").
+2. Извлеки все строки с материалами из таблицы.
+3. Для каждой строки извлеки:
+   - Позицию (№ в таблице)
+   - Наименование материала (ТОЧНО как написано)
+   - Единицу измерения (м², м.п., шт и т.д.)
+   - Количество (число, если указано)
+   - Артикул (если есть колонка)
+   - Марку/Бренд (если есть колонка)
+   - Производителя (если есть колонка)
+   - Примечания/Описание (если есть колонка)
+
+## ВАЖНО: Ответ СТРОГО в формате JSON без дополнительных текстов. Только валидный JSON.
+
+Формат ответа:
+{
+  "title": "Ведомость материалов",
+  "roomName": "Кухня",
+  "items": [
+    {
+      "position": 1,
+      "name": "Обои виниловые",
+      "unit": "м²",
+      "quantity": 25.5,
+      "article": "OB-12345",
+      "brand": "Elegant",
+      "manufacturer": "ООО Производитель",
+      "description": "Цвет бежевый"
+    },
+    {
+      "position": 2,
+      "name": "Ламинат",
+      "unit": "м²",
+      "quantity": 12.3,
+      "article": null,
+      "brand": "32 класс",
+      "manufacturer": null,
+      "description": "Цвет дуб светлый"
+    }
+  ]
+}`
+
+/**
+ * Извлечь данные из таблиц ведомостей материалов
+ * @param tableImages Массив data URLs изображений таблиц с ведомостями материалов
+ * @returns Извлеченные данные из таблиц
+ */
+export async function extractMaterialBills(
+  tableImages: string[]
+): Promise<MaterialBill[]> {
+  const apiKey = getApiKey()
+
+  if (tableImages.length === 0) {
+    return []
+  }
+
+  const content: MessageContent[] = []
+
+  content.push({
+    type: 'text',
+    text: `Извлеки ВСЕ данные из таблиц с ведомостями материалов. В проекте ${tableImages.length} таблиц. Для каждой таблицы извлеки название, все строки с материалами и их характеристики.`,
+  })
+
+  for (let i = 0; i < tableImages.length; i++) {
+    content.push({
+      type: 'image_url',
+      image_url: {
+        url: tableImages[i],
+      },
+    })
+    content.push({
+      type: 'text',
+      text: `Таблица ${i + 1} — извлеки ВСЕ строки с материалами.`,
+    })
+  }
+
+  content.push({
+    type: 'text',
+    text: '\nВерни JSON массив с данными из всех таблиц. Помни: извлеки ВСЕ строки, используй ТОЛЬКО данные из таблиц!',
+  })
+
+  const requestBodyStr = JSON.stringify({
+    model: 'google/gemini-2.5-flash',
+    messages: [
+      {
+        role: 'system',
+        content: MATERIAL_BILL_EXTRACTION_PROMPT,
+      },
+      {
+        role: 'user',
+        content,
+      },
+    ],
+    temperature: 0.1,
+    max_tokens: 16000, // Больше токенов для больших таблиц
+  })
+
+  const requestBodyBuffer = Buffer.from(requestBodyStr, 'utf-8')
+  const sizeMB = (requestBodyBuffer.length / (1024 * 1024)).toFixed(1)
+  console.log(
+    `[AI] Extracting material bills from ${tableImages.length} tables (request size: ${sizeMB} MB)...`
+  )
+
+  const responseText = await makeOpenRouterRequest(apiKey, requestBodyBuffer)
+
+  let response: {
+    choices?: Array<{
+      message?: {
+        content?: string
+      }
+    }>
+    error?: {
+      message?: string
+    }
+  }
+
+  try {
+    response = JSON.parse(responseText)
+  } catch {
+    throw new Error('Не удалось распарсить ответ от OpenRouter API')
+  }
+
+  if (response.error) {
+    throw new Error(`OpenRouter API: ${response.error.message || 'Неизвестная ошибка'}`)
+  }
+
+  const responseContent = response.choices?.[0]?.message?.content
+  if (!responseContent) {
+    throw new Error('ИИ не вернул ответ. Попробуйте снова.')
+  }
+
+  let jsonStr = responseContent.trim()
+  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (jsonMatch) {
+    jsonStr = jsonMatch[1].trim()
+  }
+
+  let bills: MaterialBill[]
+  try {
+    const parsed = JSON.parse(jsonStr)
+    
+    // Handle both array and single object
+    const billsArray = Array.isArray(parsed) ? parsed : [parsed]
+    
+    bills = billsArray.map((bill: any) => ({
+      title: String(bill.title || 'Ведомость материалов'),
+      roomName: bill.roomName ? String(bill.roomName) : undefined,
+      items: Array.isArray(bill.items)
+        ? bill.items.map((item: any) => ({
+            position: Number(item.position) || 0,
+            name: String(item.name || ''),
+            unit: String(item.unit || 'шт'),
+            quantity: item.quantity !== null && item.quantity !== undefined ? Number(item.quantity) : null,
+            article: item.article ? String(item.article) : undefined,
+            brand: item.brand ? String(item.brand) : undefined,
+            manufacturer: item.manufacturer ? String(item.manufacturer) : undefined,
+            description: item.description ? String(item.description) : undefined,
+          }))
+        : [],
+    }))
+  } catch (err) {
+    console.error('[AI] Failed to parse material bills JSON:', jsonStr.substring(0, 500))
+    throw new Error('ИИ вернул некорректный формат данных при извлечении ведомостей материалов.')
+  }
+
+  const totalItems = bills.reduce((sum, bill) => sum + bill.items.length, 0)
+  console.log(
+    `[AI] Extracted ${bills.length} material bills with ${totalItems} total items`
+  )
+
+  return bills
+}

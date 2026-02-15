@@ -14,6 +14,7 @@ import ActsPage from './pages/ActsPage'
 import AiEstimateGenerator from './pages/AiEstimateGenerator'
 import TestPageClassification from './pages/TestPageClassification'
 import TestStructureAnalysis from './pages/TestStructureAnalysis'
+import TestRoomDataExtraction from './pages/TestRoomDataExtraction'
 import PublicView from './pages/PublicView'
 import MaterialsPage from './pages/MaterialsPage'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -83,6 +84,14 @@ function App() {
           element={
             <ProtectedRoute>
               <TestStructureAnalysis />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="test-room-data-extraction"
+          element={
+            <ProtectedRoute>
+              <TestRoomDataExtraction />
             </ProtectedRoute>
           }
         />
