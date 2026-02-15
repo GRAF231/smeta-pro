@@ -126,6 +126,31 @@ function createTables(db: DatabaseType): void {
     )
   `)
 
+  // Migration: add is_customer_view column if not exists (must be before queries are created)
+  const viewColumns = db.prepare("PRAGMA table_info(estimate_views)").all() as { name: string }[]
+  if (!viewColumns.some(col => col.name === 'is_customer_view')) {
+    db.exec(`ALTER TABLE estimate_views ADD COLUMN is_customer_view INTEGER DEFAULT 0`)
+    // Set first view as customer view for existing estimates
+    db.exec(`
+      UPDATE estimate_views
+      SET is_customer_view = 1
+      WHERE id IN (
+        SELECT id FROM estimate_views
+        WHERE estimate_id IN (
+          SELECT estimate_id FROM (
+            SELECT estimate_id, MIN(sort_order) as min_order
+            FROM estimate_views
+            GROUP BY estimate_id
+          ) sub
+        )
+        AND sort_order = (
+          SELECT MIN(sort_order) FROM estimate_views e2
+          WHERE e2.estimate_id = estimate_views.estimate_id
+        )
+      )
+    `)
+  }
+
   // ========== NEW: view_section_settings ==========
   db.exec(`
     CREATE TABLE IF NOT EXISTS view_section_settings (
@@ -317,6 +342,33 @@ function createTables(db: DatabaseType): void {
     )
   `)
 
+  // ========== PAYMENTS TABLES ==========
+
+  // Create payments table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS payments (
+      id TEXT PRIMARY KEY,
+      estimate_id TEXT NOT NULL,
+      amount REAL NOT NULL,
+      payment_date TEXT NOT NULL,
+      notes TEXT DEFAULT '',
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (estimate_id) REFERENCES estimates(id) ON DELETE CASCADE
+    )
+  `)
+
+  // Create payment_items table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS payment_items (
+      id TEXT PRIMARY KEY,
+      payment_id TEXT NOT NULL,
+      item_id TEXT NOT NULL,
+      amount REAL NOT NULL,
+      FOREIGN KEY (payment_id) REFERENCES payments(id) ON DELETE CASCADE,
+      FOREIGN KEY (item_id) REFERENCES estimate_items(id) ON DELETE CASCADE
+    )
+  `)
+
   // ========== AI GENERATION TABLES ==========
 
   // Create estimate_generation_tasks table
@@ -386,6 +438,11 @@ function createTables(db: DatabaseType): void {
     db.exec(`ALTER TABLE estimates ADD COLUMN master_password TEXT DEFAULT NULL`)
   }
 
+  // Migration: add balance column if not exists
+  if (!estimateColumns.some(col => col.name === 'balance')) {
+    db.exec(`ALTER TABLE estimates ADD COLUMN balance REAL DEFAULT 0`)
+  }
+
   // Create indexes
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_estimates_brigadir ON estimates(brigadir_id);
@@ -425,6 +482,9 @@ function createTables(db: DatabaseType): void {
     CREATE INDEX IF NOT EXISTS idx_page_classifications_task_room ON pdf_page_classifications(task_id, room_name);
     CREATE INDEX IF NOT EXISTS idx_extracted_room_data_task ON extracted_room_data(task_id);
     CREATE INDEX IF NOT EXISTS idx_extracted_room_data_task_room ON extracted_room_data(task_id, room_name);
+    CREATE INDEX IF NOT EXISTS idx_payments_estimate ON payments(estimate_id);
+    CREATE INDEX IF NOT EXISTS idx_payment_items_payment ON payment_items(payment_id);
+    CREATE INDEX IF NOT EXISTS idx_payment_items_item ON payment_items(item_id);
   `)
 }
 
@@ -445,8 +505,8 @@ function migrateToViews(db: DatabaseType): void {
   const estimates = db.prepare('SELECT * FROM estimates').all() as any[]
 
   const insertView = db.prepare(`
-    INSERT INTO estimate_views (id, estimate_id, name, link_token, password, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO estimate_views (id, estimate_id, name, link_token, password, sort_order, is_customer_view)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `)
   const insertViewSectionSetting = db.prepare(`
     INSERT OR IGNORE INTO view_section_settings (id, view_id, section_id, visible)
@@ -467,7 +527,8 @@ function migrateToViews(db: DatabaseType): void {
         'Заказчик',
         est.customer_link_token,
         null,
-        0
+        0,
+        1 // is_customer_view = true
       )
 
       // Create master view
@@ -478,7 +539,8 @@ function migrateToViews(db: DatabaseType): void {
         'Мастер',
         est.master_link_token,
         est.master_password || null,
-        1
+        1,
+        0 // is_customer_view = false
       )
 
       // Migrate sections

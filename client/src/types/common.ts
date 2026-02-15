@@ -39,6 +39,11 @@ export type VersionId = string & { readonly __brand: 'VersionId' }
 export type ActId = string & { readonly __brand: 'ActId' }
 
 /**
+ * Branded type for Payment ID
+ */
+export type PaymentId = string & { readonly __brand: 'PaymentId' }
+
+/**
  * Branded type for User ID
  */
 export type UserId = string & { readonly __brand: 'UserId' }
@@ -104,6 +109,15 @@ export function asVersionId(id: string): VersionId {
  */
 export function asActId(id: string): ActId {
   return id as ActId
+}
+
+/**
+ * Helper function to create a PaymentId from a string
+ * @param id - String ID to convert
+ * @returns PaymentId branded type
+ */
+export function asPaymentId(id: string): PaymentId {
+  return id as PaymentId
 }
 
 /**

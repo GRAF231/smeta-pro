@@ -4,6 +4,7 @@ import { estimateController } from '../controllers/estimate.controller'
 import { viewController } from '../controllers/view.controller'
 import { versionController } from '../controllers/version.controller'
 import { actController } from '../controllers/act.controller'
+import { paymentController } from '../controllers/payment.controller'
 import { publicController } from '../controllers/public.controller'
 import { authMiddleware } from '../middleware/auth'
 
@@ -60,6 +61,7 @@ router.post('/:id/views', viewController.createView)
 router.put('/:id/views/:viewId', viewController.updateView)
 router.post('/:id/views/:viewId/duplicate', viewController.duplicateView)
 router.delete('/:id/views/:viewId', viewController.deleteView)
+router.post('/:id/views/:viewId/set-customer-view', viewController.setCustomerView)
 router.put('/:id/views/:viewId/sections/:sectionId', viewController.updateSectionSettings)
 router.put('/:id/views/:viewId/items/:itemId', viewController.updateItemSettings)
 
@@ -80,6 +82,13 @@ router.delete('/:id/acts/:actId', actController.deleteAct)
 router.get('/:id/act-images', actController.getActImages)
 router.post('/:id/act-images', actController.uploadActImage)
 router.delete('/:id/act-images/:imageType', actController.deleteActImage)
+
+// Payments
+router.get('/:id/payments', paymentController.getPayments)
+router.post('/:id/payments', paymentController.createPayment)
+router.get('/:id/payments/:paymentId', paymentController.getPayment)
+router.delete('/:id/payments/:paymentId', paymentController.deletePayment)
+router.get('/:id/item-statuses', paymentController.getItemStatuses)
 
 export default router
 

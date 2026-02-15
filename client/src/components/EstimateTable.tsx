@@ -172,18 +172,36 @@ export default function EstimateTable({ data, viewName, variant }: EstimateTable
               </TableRow>
             </thead>
             <tbody>
-              {section.items.map((item, idx) => (
-                <TableRow key={idx} hoverable>
-                  <TableCell compact className="text-slate-500">{item.number}</TableCell>
-                  <TableCell compact className="text-slate-200 leading-tight">{item.name}</TableCell>
-                  <TableCell align="center" compact className="text-slate-400">{item.unit}</TableCell>
-                  <TableCell align="right" compact className="text-slate-300">{item.quantity}</TableCell>
-                  <TableCell align="right" compact className="text-slate-300 whitespace-nowrap">{formatNumber(item.price)}</TableCell>
-                  <TableCell align="right" compact className="font-medium text-white whitespace-nowrap">
-                    {formatNumber(item.total)}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {section.items.map((item, idx) => {
+                const isPaid = item.paidAmount > 0
+                const isCompleted = item.completedAmount > 0
+                return (
+                  <TableRow key={idx} hoverable>
+                    <TableCell compact className="text-slate-500">{item.number}</TableCell>
+                    <TableCell compact className="text-slate-200 leading-tight">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span>{item.name}</span>
+                        {isPaid && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-500/20 text-green-400 border border-green-500/30">
+                            Оплачено
+                          </span>
+                        )}
+                        {isCompleted && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                            Выполнено
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell align="center" compact className="text-slate-400">{item.unit}</TableCell>
+                    <TableCell align="right" compact className="text-slate-300">{item.quantity}</TableCell>
+                    <TableCell align="right" compact className="text-slate-300 whitespace-nowrap">{formatNumber(item.price)}</TableCell>
+                    <TableCell align="right" compact className="font-medium text-white whitespace-nowrap">
+                      {formatNumber(item.total)}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
             </tbody>
             <tfoot>
               <TableRow highlighted>

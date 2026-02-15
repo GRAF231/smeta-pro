@@ -80,6 +80,7 @@ export function useActPdf({
 
       // Save act to database
       try {
+        // Always save individual items, even when sections are selected
         const actItemsToSave: Array<{
           itemId?: ItemId
           sectionId?: SectionId
@@ -90,49 +91,20 @@ export function useActPdf({
           total: number
         }> = []
 
-        if (selectionMode === 'sections') {
-          sections.forEach(section => {
-            if (!selectedSections.has(asSectionId(section.id))) return
-            const selectedSectionItems = section.items.filter(item => selectedItems.has(asItemId(item.id)))
-            const sectionTotal = selectedSectionItems.reduce((sum, item) => sum + getItemTotal(item), 0)
-            if (sectionTotal > 0) {
-              actItemsToSave.push({
-                sectionId: asSectionId(section.id),
-                name: section.name,
-                unit: '-',
-                quantity: 1,
-                price: sectionTotal,
-                total: sectionTotal,
-              })
-              selectedSectionItems.forEach(item => {
-                actItemsToSave.push({
-                  itemId: asItemId(item.id),
-                  sectionId: asSectionId(section.id),
-                  name: item.name,
-                  unit: item.unit || '-',
-                  quantity: item.quantity,
-                  price: getItemPrice(item),
-                  total: getItemTotal(item),
-                })
-              })
-            }
-          })
-        } else {
-          sections.forEach(section => {
-            section.items.forEach(item => {
-              if (!selectedItems.has(asItemId(item.id))) return
-              actItemsToSave.push({
-                itemId: asItemId(item.id),
-                sectionId: asSectionId(section.id),
-                name: item.name,
-                unit: item.unit || '-',
-                quantity: item.quantity,
-                price: getItemPrice(item),
-                total: getItemTotal(item),
-              })
+        sections.forEach(section => {
+          section.items.forEach(item => {
+            if (!selectedItems.has(asItemId(item.id))) return
+            actItemsToSave.push({
+              itemId: asItemId(item.id),
+              sectionId: asSectionId(section.id),
+              name: item.name,
+              unit: item.unit || '-',
+              quantity: item.quantity,
+              price: getItemPrice(item),
+              total: getItemTotal(item),
             })
           })
-        }
+        })
 
         const grandTotal = actLines.reduce((sum, line) => sum + line.total, 0)
 
@@ -145,7 +117,7 @@ export function useActPdf({
           customerName,
           directorName,
           serviceName,
-          selectionMode,
+          selectionMode: 'items', // Always use 'items' mode - sections are converted to items
           grandTotal,
           items: actItemsToSave,
         })

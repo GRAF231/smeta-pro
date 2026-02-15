@@ -17,6 +17,8 @@ export interface Project {
   title: string
   /** Google Sheets document ID */
   googleSheetId: string
+  /** Project balance */
+  balance: number
   /** Last synchronization timestamp with Google Sheets (ISO string) */
   lastSyncedAt?: string
   /** Project creation timestamp (ISO string) */

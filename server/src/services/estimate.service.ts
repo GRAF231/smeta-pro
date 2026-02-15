@@ -7,6 +7,8 @@ import {
   viewSectionSettingsRepository,
   viewItemSettingsRepository,
 } from '../repositories/view.repository'
+import { paymentRepository, paymentItemRepository } from '../repositories/payment.repository'
+import { savedActItemRepository } from '../repositories/act.repository'
 import {
   EstimateResponse,
   EstimateListItem,
@@ -113,6 +115,7 @@ export class EstimateService {
       id: estimate.id,
       title: estimate.title,
       googleSheetId: estimate.google_sheet_id,
+      balance: estimate.balance || 0,
       lastSyncedAt: estimate.last_synced_at,
       createdAt: estimate.created_at,
       views: views.map(v => ({
@@ -121,6 +124,7 @@ export class EstimateService {
         linkToken: v.link_token,
         password: v.password || '',
         sortOrder: v.sort_order,
+        isCustomerView: Boolean(v.is_customer_view),
       })),
       sections: sectionsWithItems,
     }
@@ -137,6 +141,7 @@ export class EstimateService {
         id: e.id,
         title: e.title,
         googleSheetId: e.google_sheet_id,
+        balance: e.balance || 0,
         lastSyncedAt: e.last_synced_at,
         createdAt: e.created_at,
         views: views.map(v => ({
@@ -145,6 +150,7 @@ export class EstimateService {
           linkToken: v.link_token,
           password: v.password || '',
           sortOrder: v.sort_order,
+          isCustomerView: Boolean(v.is_customer_view),
         })),
       }
     })
@@ -186,7 +192,8 @@ export class EstimateService {
         'Заказчик',
         customerLinkToken,
         null,
-        0
+        0,
+        true // isCustomerView
       )
       viewRepository.create(
         masterViewId,
@@ -194,7 +201,8 @@ export class EstimateService {
         'Мастер',
         masterLinkToken,
         null,
-        1
+        1,
+        false // isCustomerView
       )
 
       this.syncEstimateItems(id, rows, customerViewId, masterViewId)
@@ -217,7 +225,8 @@ export class EstimateService {
         'Заказчик',
         customerLinkToken,
         null,
-        0
+        0,
+        true // isCustomerView
       )
       viewRepository.create(
         uuidv4(),
@@ -636,6 +645,65 @@ export class EstimateService {
       })
     }
 
+    // Determine if this is customer view or master view
+    const viewRow = viewRepository.findById(view.id)
+    const isCustomerView = viewRow ? Boolean(viewRow.is_customer_view) : false
+
+    // Prepare data for recalculating paid and completed amounts per item
+    const allPaymentItems = paymentItemRepository.findByEstimateId(view.estimate_id)
+    const allActItems = savedActItemRepository.findByEstimateItemIds(view.estimate_id)
+
+    // Build customer price map if needed (for master view recalculation)
+    const customerPriceMap = new Map<string, number>()
+    if (!isCustomerView) {
+      const allViews = viewRepository.findByEstimateId(view.estimate_id)
+      const customerView = allViews.find(v => v.is_customer_view === 1)
+      const customerViewSettings = customerView 
+        ? viewItemSettingsRepository.findByViewId(customerView.id)
+        : []
+      for (const setting of customerViewSettings) {
+        customerPriceMap.set(setting.item_id, setting.price)
+      }
+    }
+
+    // Build maps for paid and completed amounts per item (recalculated for current view)
+    const paidItemsMap = new Map<string, number>() // item_id -> paid amount (real or recalculated)
+    const completedItemsQuantityMap = new Map<string, number>() // item_id -> total quantity completed
+
+    // Process payment items
+    for (const paymentItem of allPaymentItems) {
+      const item = items.find(i => i.id === paymentItem.item_id)
+      if (!item) continue
+
+      if (isCustomerView) {
+        // For customer: use real payment amount
+        const currentPaid = paidItemsMap.get(paymentItem.item_id) || 0
+        paidItemsMap.set(paymentItem.item_id, currentPaid + paymentItem.amount)
+      } else {
+        // For master: recalculate using master prices
+        // Since payments are always for full item cost, we use full item quantity
+        const masterPrice = itemSettingsMap.get(paymentItem.item_id)?.price || 0
+        
+        if (masterPrice > 0) {
+          // Recalculate using master view price for full item quantity
+          const currentPaid = paidItemsMap.get(paymentItem.item_id) || 0
+          paidItemsMap.set(paymentItem.item_id, currentPaid + (masterPrice * item.quantity))
+        } else {
+          // If no master price, still record the payment (use customer amount as fallback)
+          const currentPaid = paidItemsMap.get(paymentItem.item_id) || 0
+          paidItemsMap.set(paymentItem.item_id, currentPaid + paymentItem.amount)
+        }
+      }
+    }
+
+    // Process completed work items
+    for (const actItem of allActItems) {
+      if (actItem.item_id) {
+        const currentQty = completedItemsQuantityMap.get(actItem.item_id) || 0
+        completedItemsQuantityMap.set(actItem.item_id, currentQty + actItem.quantity)
+      }
+    }
+
     const visibleSections = sections
       .filter(s => sectionVisMap.get(s.id) !== false) // default visible
       .map(section => {
@@ -651,6 +719,43 @@ export class EstimateService {
               price: 0,
               total: 0,
             }
+            
+            // Calculate paid amount (real for customer, recalculated for master)
+            const paidAmount = paidItemsMap.get(item.id) || 0
+            
+            // Calculate completed amount using prices from current view
+            const completedQuantity = completedItemsQuantityMap.get(item.id) || 0
+            let completedAmount = 0
+            if (completedQuantity > 0) {
+              // Always use price from current view if available
+              if (settings.price > 0) {
+                completedAmount = settings.price * completedQuantity
+              } else {
+                // If no price in current view settings, use fallback
+                // For master view: try customer price, then act price
+                // For customer view: use act price
+                if (!isCustomerView) {
+                  // Master view: prefer customer price for consistency
+                  const customerPrice = customerPriceMap.get(item.id) || 0
+                  if (customerPrice > 0) {
+                    completedAmount = customerPrice * completedQuantity
+                  } else {
+                    // Fallback to act price
+                    const actItem = allActItems.find(ai => ai.item_id === item.id)
+                    if (actItem && actItem.price > 0) {
+                      completedAmount = actItem.price * completedQuantity
+                    }
+                  }
+                } else {
+                  // Customer view: use act price as fallback
+                  const actItem = allActItems.find(ai => ai.item_id === item.id)
+                  if (actItem && actItem.price > 0) {
+                    completedAmount = actItem.price * completedQuantity
+                  }
+                }
+              }
+            }
+            
             return {
               number: String(itemNumber++),
               name: item.name,
@@ -658,6 +763,8 @@ export class EstimateService {
               quantity: item.quantity,
               price: settings.price,
               total: settings.total,
+              paidAmount,
+              completedAmount,
             }
           })
 
@@ -671,11 +778,39 @@ export class EstimateService {
 
     const total = visibleSections.reduce((sum, s) => sum + s.subtotal, 0)
 
+    // Calculate balance using the same recalculated amounts from paidItemsMap and completedItemsQuantityMap
+    // This ensures consistency with the per-item amounts shown in the table
+    let totalPaid = 0
+    for (const [itemId, paidAmount] of paidItemsMap.entries()) {
+      totalPaid += paidAmount
+    }
+
+    let totalCompleted = 0
+    for (const [itemId, completedQuantity] of completedItemsQuantityMap.entries()) {
+      const item = items.find(i => i.id === itemId)
+      if (item) {
+        const settings = itemSettingsMap.get(itemId)
+        if (settings && settings.price > 0) {
+          // Use price from current view
+          totalCompleted += settings.price * completedQuantity
+        } else {
+          // If no price in view settings, use price from act item (fallback)
+          const actItem = allActItems.find(ai => ai.item_id === itemId)
+          if (actItem) {
+            totalCompleted += actItem.price * completedQuantity
+          }
+        }
+      }
+    }
+
+    const balance = totalPaid - totalCompleted
+
     return {
       title: estimate.title,
       viewName: view.name,
       sections: visibleSections,
       total,
+      balance,
     }
   }
 }

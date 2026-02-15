@@ -62,7 +62,15 @@ export function useItemHandlers({
   /**
    * Start editing an item
    */
-  const startEditing = (item: EstimateItem) => {
+  const startEditing = (item: EstimateItem, itemStatus?: { paidAmount?: number; completedAmount?: number }) => {
+    // Prevent editing paid or completed items
+    const isPaid = (itemStatus?.paidAmount || 0) > 0
+    const isCompleted = (itemStatus?.completedAmount || 0) > 0
+    if (isPaid || isCompleted) {
+      setError('Нельзя редактировать оплаченные или выполненные работы')
+      return
+    }
+    
     setEditingItem(asItemId(item.id))
     setEditingData({
       name: item.name,
@@ -129,8 +137,17 @@ export function useItemHandlers({
   /**
    * Handle deleting an item
    */
-  const handleDeleteItem = async (sectionId: SectionId, itemId: ItemId) => {
+  const handleDeleteItem = async (sectionId: SectionId, itemId: ItemId, itemStatus?: { paidAmount?: number; completedAmount?: number }) => {
     if (!projectId || !project) return
+    
+    // Prevent deleting paid or completed items
+    const isPaid = (itemStatus?.paidAmount || 0) > 0
+    const isCompleted = (itemStatus?.completedAmount || 0) > 0
+    if (isPaid || isCompleted) {
+      setError('Нельзя удалять оплаченные или выполненные работы')
+      return
+    }
+    
     if (!confirm('Удалить эту позицию?')) return
     try {
       await projectsApi.deleteItem(projectId, itemId)

@@ -43,9 +43,10 @@ export class ViewRepository {
     name: string,
     linkToken: string,
     password: string | null,
-    sortOrder: number
+    sortOrder: number,
+    isCustomerView: boolean = false
   ): void {
-    viewQueries.create.run(id, estimateId, name, linkToken, password, sortOrder)
+    viewQueries.create.run(id, estimateId, name, linkToken, password, sortOrder, isCustomerView ? 1 : 0)
   }
 
   /**
@@ -77,6 +78,16 @@ export class ViewRepository {
       max_order: number
     } | undefined
     return result?.max_order || 0
+  }
+
+  /**
+   * Установить представление как смету для заказчика
+   */
+  setCustomerView(estimateId: string, viewId: string): void {
+    // Сначала сбросим все флаги для этой сметы
+    viewQueries.clearCustomerViewForEstimate.run(estimateId)
+    // Затем установим флаг для выбранного представления
+    viewQueries.updateCustomerView.run(1, viewId)
   }
 }
 

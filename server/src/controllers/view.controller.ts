@@ -98,6 +98,16 @@ export class ViewController {
     )
     sendSuccess(res, { success: true, ...result })
   })
+
+  /**
+   * Установить представление как смету для заказчика
+   */
+  setCustomerView = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const estimateId = String(req.params.id)
+    const viewId = String(req.params.viewId)
+    const view = viewService.setCustomerView(estimateId, viewId)
+    sendSuccess(res, view)
+  })
 }
 
 export const viewController = new ViewController()

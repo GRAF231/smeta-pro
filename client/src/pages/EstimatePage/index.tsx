@@ -1,5 +1,5 @@
 import { useParams } from 'react-router-dom'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { PageSpinner } from '../../components/ui/Spinner'
 import { useToast } from '../../components/ui/ToastContainer'
 import { IconPlus } from '../../components/ui/Icons'
@@ -12,6 +12,8 @@ import { useEstimatePageState } from './hooks/useEstimatePageState'
 import { useEstimateHandlers } from './hooks/useEstimateHandlers'
 import { calculateTotals } from './utils/calculations'
 import { getProjectIdFromParams } from '../../utils/params'
+import { projectsApi } from '../../services/api'
+import type { ItemStatus } from '../../types'
 
 /**
  * Estimate page component
@@ -106,6 +108,21 @@ export default function EstimatePage() {
   const activeView = project?.views.find(v => v.id === activeViewId) || null
   const totals = calculateTotals(project)
 
+  // Fetch item statuses (paid/completed amounts)
+  const [itemStatuses, setItemStatuses] = useState<Record<string, ItemStatus>>({})
+  
+  useEffect(() => {
+    if (id && project) {
+      projectsApi.getItemStatuses(id)
+        .then(res => {
+          setItemStatuses(res.data || {})
+        })
+        .catch(() => {
+          setItemStatuses({})
+        })
+    }
+  }, [id, project])
+
   // Show error toast when error changes
   useEffect(() => {
     if (error) {
@@ -165,6 +182,7 @@ export default function EstimatePage() {
             section={section}
             activeViewId={activeViewId}
             activeView={activeView}
+            itemStatuses={itemStatuses}
             editingItem={editingItem}
             editingData={editingData}
             newItemSection={newItemSection}

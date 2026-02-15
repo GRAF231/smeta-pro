@@ -18,8 +18,10 @@ interface GetItemTotalFn {
 /**
  * Calculate act line items from selected sections/items
  * 
+ * Always creates individual lines for each item, even when sections are selected.
+ * 
  * @param sections - All sections
- * @param selectionMode - Selection mode ('sections' or 'items')
+ * @param selectionMode - Selection mode ('sections' or 'items') - kept for backward compatibility but not used
  * @param selectedSections - Set of selected section IDs
  * @param selectedItems - Set of selected item IDs
  * @param getItemPrice - Function to get item price
@@ -37,26 +39,12 @@ export function calculateActLines(
   const lines: ActLine[] = []
   let num = 1
 
-  if (selectionMode === 'sections') {
-    sections.forEach(section => {
-      if (!selectedSections.has(section.id)) return
-      const selectedSectionItems = section.items.filter(item => selectedItems.has(item.id))
-      const sectionTotal = selectedSectionItems.reduce((sum, item) => sum + getItemTotal(item), 0)
-      if (sectionTotal > 0) {
-        lines.push({
-          number: num++,
-          name: section.name,
-          quantity: 1,
-          unit: '-',
-          price: sectionTotal,
-          total: sectionTotal,
-        })
-      }
-    })
-  } else {
-    sections.forEach(section => {
-      section.items.forEach(item => {
-        if (!selectedItems.has(item.id)) return
+  // Always create individual lines for each selected item
+  // When a section is selected, all items from that section are added to selectedItems
+  // So we just need to check if the item is in selectedItems
+  sections.forEach(section => {
+    section.items.forEach(item => {
+      if (selectedItems.has(item.id)) {
         lines.push({
           number: num++,
           name: item.name,
@@ -65,9 +53,9 @@ export function calculateActLines(
           price: getItemPrice(item),
           total: getItemTotal(item),
         })
-      })
+      }
     })
-  }
+  })
 
   return lines
 }

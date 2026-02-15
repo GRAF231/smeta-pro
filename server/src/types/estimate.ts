@@ -10,6 +10,7 @@ export interface EstimateRow {
   master_link_token: string
   column_mapping: string
   master_password: string | null
+  balance: number
   last_synced_at: string | null
   created_at: string
 }
@@ -48,6 +49,7 @@ export interface ViewRow {
   link_token: string
   password: string | null
   sort_order: number
+  is_customer_view: number
   created_at: string
 }
 
@@ -252,6 +254,7 @@ export interface EstimateResponse {
   id: string
   title: string
   googleSheetId: string
+  balance: number
   lastSyncedAt: string | null
   createdAt: string
   views: EstimateView[]
@@ -265,6 +268,7 @@ export interface EstimateListItem {
   id: string
   title: string
   googleSheetId: string
+  balance: number
   lastSyncedAt: string | null
   createdAt: string
   views: EstimateView[]
@@ -463,6 +467,8 @@ export interface PublicViewSection {
     quantity: number
     price: number
     total: number
+    paidAmount: number
+    completedAmount: number
   }>
   subtotal: number
 }
@@ -475,6 +481,7 @@ export interface PublicViewResponse {
   viewName: string
   sections: PublicViewSection[]
   total: number
+  balance: number
 }
 
 /**
@@ -557,5 +564,67 @@ export interface ExtractedRoomDataRow {
   ceiling_area: number | null
   extracted_data_json: string
   created_at: string
+}
+
+// ========== PAYMENT TYPES ==========
+
+/**
+ * Платеж из базы данных
+ */
+export interface PaymentRow {
+  id: string
+  estimate_id: string
+  amount: number
+  payment_date: string
+  notes: string
+  created_at: string
+}
+
+/**
+ * Позиция платежа из базы данных
+ */
+export interface PaymentItemRow {
+  id: string
+  payment_id: string
+  item_id: string
+  amount: number
+}
+
+/**
+ * Данные для создания платежа
+ */
+export interface CreatePaymentInput {
+  amount: number
+  paymentDate: string
+  notes?: string
+  items: Array<{
+    itemId: string
+    amount: number
+  }>
+}
+
+/**
+ * Информация о платеже
+ */
+export interface PaymentInfo {
+  id: string
+  amount: number
+  paymentDate: string
+  notes: string
+  createdAt: string
+  items: Array<{
+    id: string
+    itemId: string
+    amount: number
+  }>
+}
+
+/**
+ * Статус пункта сметы (оплачено/выполнено)
+ */
+export interface ItemStatus {
+  itemId: string
+  paidAmount: number
+  completedAmount: number
 }
 

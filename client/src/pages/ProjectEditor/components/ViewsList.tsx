@@ -18,6 +18,7 @@ interface ViewsListProps {
   onSaveView: (viewId: ViewId) => void
   onDuplicateView: (viewId: ViewId) => void
   onDeleteView: (viewId: ViewId, viewName: string) => void
+  onSetCustomerView: (viewId: ViewId) => void
   onNameChange: (name: string) => void
   onPasswordChange: (password: string) => void
 }
@@ -45,6 +46,7 @@ export function ViewsList({
   onSaveView,
   onDuplicateView,
   onDeleteView,
+  onSetCustomerView,
   onNameChange,
   onPasswordChange,
 }: ViewsListProps) {
@@ -96,6 +98,11 @@ export function ViewsList({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="font-medium text-white text-sm">{view.name}</span>
+                    {view.isCustomerView && (
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-primary-500/20 text-primary-400 border border-primary-500/30">
+                        Смета для заказчика
+                      </span>
+                    )}
                     {view.password && (
                       <span className="text-xs px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
                         🔒 Защищено
@@ -110,6 +117,15 @@ export function ViewsList({
                   </p>
                 </div>
                 <div className="flex items-center gap-1 ml-3 shrink-0">
+                  {!view.isCustomerView && (
+                    <button
+                      onClick={() => onSetCustomerView(asViewId(view.id))}
+                      className="p-2 rounded-lg text-slate-400 hover:text-primary-400 hover:bg-primary-500/10 transition-all text-xs"
+                      title="Отметить как смету для заказчика"
+                    >
+                      Отметить для заказчика
+                    </button>
+                  )}
                   <button
                     onClick={() => copyLink(view)}
                     className={`p-2 rounded-lg transition-all text-sm ${

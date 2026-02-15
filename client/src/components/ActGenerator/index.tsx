@@ -73,10 +73,27 @@ export default function ActGenerator({ projectId, sections, views, onBack }: Act
     return selectedViewId ? (item.viewSettings[selectedViewId]?.total ?? 0) : 0
   }
 
-  // Calculate act lines
+  // Filter sections and items by visibility in selected view
+  const getVisibleSections = (): EstimateSection[] => {
+    return sections.map(section => {
+      const visibleItems = selectedViewId
+        ? section.items.filter(item => {
+            const viewSettings = item.viewSettings[selectedViewId]
+            return viewSettings?.visible !== false
+          })
+        : section.items
+
+      return {
+        ...section,
+        items: visibleItems,
+      }
+    }).filter(section => section.items.length > 0)
+  }
+
+  // Calculate act lines (always use 'items' mode - sections are converted to items)
   const actLines = calculateActLines(
     sections,
-    selection.selectionMode,
+    'items',
     selection.selectedSections,
     selection.selectedItems,
     getItemPrice,
@@ -88,7 +105,7 @@ export default function ActGenerator({ projectId, sections, views, onBack }: Act
   const { actRef, isGenerating, handleDownload } = useActPdf({
     projectId: asProjectId(projectId),
     selectedViewId: selectedViewId ?? null,
-    selectionMode: selection.selectionMode,
+    selectionMode: 'items', // Always use 'items' mode - sections are converted to items
     selectedSections: new Set(Array.from(selection.selectedSections).map(id => asSectionId(id))),
     selectedItems: new Set(Array.from(selection.selectedItems).map(id => asItemId(id))),
     sections,
@@ -105,15 +122,22 @@ export default function ActGenerator({ projectId, sections, views, onBack }: Act
     onUsedItemsReload: reloadUsedItems,
   })
 
-  // Toggle handlers with section lookup
+  // Toggle handlers with section lookup (using visible sections only)
   const handleToggleSection = (sectionId: string) => {
-    const section = sections.find(s => s.id === sectionId)
+    const visibleSections = getVisibleSections()
+    const section = visibleSections.find(s => s.id === sectionId)
     selection.toggleSection(sectionId, section)
   }
 
   const handleToggleItem = (sectionId: string, itemId: string) => {
-    const section = sections.find(s => s.id === sectionId)
+    const visibleSections = getVisibleSections()
+    const section = visibleSections.find(s => s.id === sectionId)
     selection.toggleItem(sectionId, itemId, section)
+  }
+
+  const handleSelectAll = () => {
+    const visibleSections = getVisibleSections()
+    selection.selectAll(visibleSections)
   }
 
   const hasSelection = actLines.length > 0
@@ -178,17 +202,15 @@ export default function ActGenerator({ projectId, sections, views, onBack }: Act
             />
             <ActSelectionStep
               sections={sections}
-              selectionMode={selection.selectionMode}
               selectedSections={selection.selectedSections}
               selectedItems={selection.selectedItems}
               usedItems={usedItems}
               selectedViewId={selectedViewId}
               actLinesCount={actLines.length}
               grandTotal={grandTotal}
-              onSelectionModeChange={selection.setSelectionMode}
               onToggleSection={handleToggleSection}
               onToggleItem={handleToggleItem}
-              onSelectAll={() => selection.selectAll(sections)}
+              onSelectAll={handleSelectAll}
               onDeselectAll={selection.deselectAll}
               getItemTotal={getItemTotal}
             />

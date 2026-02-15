@@ -14,12 +14,16 @@ import type {
   SavedAct,
   SavedActDetail,
   UsedItemsMap,
+  Payment,
+  PaymentItem,
+  ItemStatus,
   ProjectId,
   ViewId,
   SectionId,
   ItemId,
   ActId,
   VersionId,
+  PaymentId,
 } from '../../types'
 
 /**
@@ -75,6 +79,8 @@ export const projectsApi = {
     api.post<EstimateView>(`/projects/${projectId}/views/${viewId}/duplicate`),
   deleteView: (projectId: ProjectId, viewId: ViewId) =>
     api.delete(`/projects/${projectId}/views/${viewId}`),
+  setCustomerView: (projectId: ProjectId, viewId: ViewId) =>
+    api.post<EstimateView>(`/projects/${projectId}/views/${viewId}/set-customer-view`),
 
   // View section/item settings
   updateViewSectionSetting: (projectId: ProjectId, viewId: ViewId, sectionId: SectionId, data: { visible: boolean }) =>
@@ -139,6 +145,20 @@ export const projectsApi = {
     api.delete(`/projects/${projectId}/acts/${actId}`),
   getUsedItems: (projectId: ProjectId) =>
     api.get<UsedItemsMap>(`/projects/${projectId}/acts/used-items`),
+
+  // Payments
+  getPayments: (projectId: ProjectId) =>
+    api.get<Payment[]>(`/projects/${projectId}/payments`),
+  createPayment: (projectId: ProjectId, data: {
+    amount: number
+    paymentDate: string
+    notes?: string
+    items: Array<{ itemId: ItemId; amount: number }>
+  }) => api.post<Payment>(`/projects/${projectId}/payments`, data),
+  deletePayment: (projectId: ProjectId, paymentId: PaymentId) =>
+    api.delete(`/projects/${projectId}/payments/${paymentId}`),
+  getItemStatuses: (projectId: ProjectId) =>
+    api.get<Record<string, ItemStatus>>(`/projects/${projectId}/item-statuses`),
 
   // AI Generation from PDF
   generateFromPdf: (formData: FormData) =>

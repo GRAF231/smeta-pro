@@ -8,6 +8,7 @@ import { getProjectIdFromParams } from '../utils/params'
 import { PageSpinner } from '../components/ui/Spinner'
 import { useToast } from '../components/ui/ToastContainer'
 import BackButton from '../components/ui/BackButton'
+import BalanceDisplay from '../components/BalanceDisplay'
 import { useViewEditor } from './ProjectEditor/hooks/useViewEditor'
 import { ViewsList } from './ProjectEditor/components/ViewsList'
 import { ProjectNavigationCards } from './ProjectEditor/components/ProjectNavigationCards'
@@ -33,9 +34,9 @@ export default function ProjectEditor() {
   const params = useParams<{ id: string }>()
   const id = getProjectIdFromParams(params)
   const navigate = useNavigate()
-  const { project, isLoading, error, setError, setProject } = useProject(id)
+  const { project, isLoading, error, setError, setProject, reload } = useProject(id)
   const { deleteProject } = useProjects()
-  const { createView, updateView, duplicateView, deleteView: deleteViewHook } = useEstimateViews(id)
+  const { createView, updateView, duplicateView, deleteView: deleteViewHook, setCustomerView } = useEstimateViews(id)
   const { showError } = useToast()
 
   const {
@@ -128,6 +129,25 @@ export default function ProjectEditor() {
     }
   }
 
+  const handleSetCustomerView = async (viewId: ViewId) => {
+    if (!id || !project) return
+    try {
+      const updatedView = await setCustomerView(viewId)
+      if (updatedView) {
+        // Обновить все представления, сбросив флаг isCustomerView и установив его для выбранного
+        setProject({
+          ...project,
+          views: project.views.map(v => ({
+            ...v,
+            isCustomerView: v.id === viewId,
+          })),
+        })
+      }
+    } catch {
+      // Error is handled by hook
+    }
+  }
+
   // Show error toast when error changes
   useEffect(() => {
     if (error) {
@@ -151,11 +171,22 @@ export default function ProjectEditor() {
       {/* Header */}
       <div className="mb-8">
         <BackButton to="/dashboard" label="Назад к проектам" />
-        <h1 className="font-display text-2xl font-bold text-white">{project.title}</h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Создан: {new Date(project.createdAt).toLocaleDateString('ru-RU')}
-          {project.googleSheetId && ' • Подключена Google Таблица'}
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="font-display text-2xl font-bold text-white">{project.title}</h1>
+            <p className="text-sm text-slate-500 mt-1">
+              Создан: {new Date(project.createdAt).toLocaleDateString('ru-RU')}
+              {project.googleSheetId && ' • Подключена Google Таблица'}
+            </p>
+          </div>
+          {id && (
+            <BalanceDisplay
+              project={project}
+              projectId={id}
+              onBalanceUpdate={reload}
+            />
+          )}
+        </div>
       </div>
 
       {id && <ProjectNavigationCards projectId={id} />}
@@ -173,6 +204,7 @@ export default function ProjectEditor() {
         onSaveView={handleSaveView}
         onDuplicateView={handleDuplicateView}
         onDeleteView={handleDeleteView}
+        onSetCustomerView={handleSetCustomerView}
         onNameChange={setEditingViewName}
         onPasswordChange={setEditingViewPassword}
       />

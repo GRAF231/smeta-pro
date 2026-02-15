@@ -4,6 +4,7 @@ import {
   savedActRepository,
   savedActItemRepository,
 } from '../repositories/act.repository'
+import { paymentRepository } from '../repositories/payment.repository'
 import {
   ActInfo,
   ActDetails,
@@ -117,11 +118,17 @@ export class ActService {
       }
     }
 
+    // Уменьшить баланс на сумму акта
+    const grandTotal = input.grandTotal || 0
+    if (grandTotal > 0) {
+      paymentRepository.updateBalance(estimateId, -grandTotal)
+    }
+
     return {
       id: actId,
       actNumber: input.actNumber,
       actDate: input.actDate || new Date().toISOString().split('T')[0],
-      grandTotal: input.grandTotal || 0,
+      grandTotal,
       createdAt: new Date().toISOString(),
     }
   }
@@ -133,6 +140,11 @@ export class ActService {
     const act = savedActRepository.findById(actId)
     if (!act || act.estimate_id !== estimateId) {
       throw new NotFoundError('Акт')
+    }
+
+    // Вернуть баланс на сумму акта
+    if (act.grand_total > 0) {
+      paymentRepository.updateBalance(estimateId, act.grand_total)
     }
 
     savedActRepository.delete(actId)

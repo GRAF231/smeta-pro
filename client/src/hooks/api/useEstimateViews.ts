@@ -168,6 +168,21 @@ export function useEstimateViews(projectId: ProjectId | undefined) {
     }
   }, [projectId])
 
+  const setCustomerView = useCallback(async (viewId: ViewId) => {
+    if (!projectId) return
+    setIsLoading(true)
+    setError('')
+    try {
+      const res = await projectsApi.setCustomerView(projectId, viewId)
+      return res.data
+    } catch (err) {
+      setError(getErrorMessage(err, 'Ошибка установки сметы для заказчика'))
+      throw err
+    } finally {
+      setIsLoading(false)
+    }
+  }, [projectId])
+
   return {
     isLoading,
     error,
@@ -177,6 +192,7 @@ export function useEstimateViews(projectId: ProjectId | undefined) {
     deleteView,
     updateViewSectionSetting,
     updateViewItemSetting,
+    setCustomerView,
     setError,
   }
 }

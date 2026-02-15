@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { EstimateSection, EstimateItem, EstimateView, ViewId, ItemId, SectionId } from '../../types'
+import type { EstimateSection, EstimateItem, EstimateView, ViewId, ItemId, SectionId, ItemStatus } from '../../types'
 import { formatNumber } from '../../utils/format'
 import { IconCheck, IconClose, IconTrash, IconPlus } from '../../components/ui/Icons'
 import { asSectionId, asItemId } from '../../types'
@@ -8,6 +8,7 @@ interface SectionCardProps {
   section: EstimateSection
   activeViewId: ViewId | null
   activeView: EstimateView | null
+  itemStatuses: Record<string, ItemStatus>
   editingItem: ItemId | null
   editingData: { name?: string; unit?: string; quantity?: number; price?: number }
   newItemSection: SectionId | null
@@ -19,17 +20,17 @@ interface SectionCardProps {
   onSectionVisibilityChange: (sectionId: SectionId, currentVisible: boolean) => void
   onDeleteSection: (sectionId: SectionId, sectionName: string) => void
   onItemVisibilityChange: (sectionId: SectionId, item: EstimateItem) => void
-  onStartEditing: (item: EstimateItem) => void
+  onStartEditing: (item: EstimateItem, itemStatus?: ItemStatus) => void
   onCancelEditing: () => void
   onSaveEditing: (sectionId: SectionId, item: EstimateItem) => void
   onEditingDataChange: (data: { name?: string; unit?: string; quantity?: number; price?: number }) => void
-  onDeleteItem: (sectionId: SectionId, itemId: ItemId) => void
+  onDeleteItem: (sectionId: SectionId, itemId: ItemId, itemStatus?: ItemStatus) => void
   onAddItem: (sectionId: SectionId, name: string, unit: string, quantity: number) => void
   onNewItemSectionChange: (sectionId: SectionId | null) => void
 }
 
 export default function SectionCard({
-  section, activeViewId, activeView,
+  section, activeViewId, activeView, itemStatuses,
   editingItem, editingData, newItemSection,
   editingSectionId, editingSectionName,
   onEditingSectionIdChange, onEditingSectionNameChange,
@@ -107,6 +108,8 @@ export default function SectionCard({
               <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-16 sm:w-24 text-right">Кол-во</th>
               <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-20 sm:w-28 text-right">Цена</th>
               <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-24 sm:w-32 text-right">Сумма</th>
+              <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-12 text-center" title="Оплачено">💰</th>
+              <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-12 text-center" title="Выполнено">✅</th>
               <th className="px-1.5 sm:px-3 py-1.5 sm:py-2 w-16 sm:w-24"></th>
             </tr>
           </thead>
@@ -116,16 +119,27 @@ export default function SectionCard({
               const itemVisible = vs?.visible ?? true
               const itemPrice = vs?.price ?? 0
               const itemTotal = vs?.total ?? 0
+              const itemStatus = itemStatuses[item.id]
+              const isPaid = (itemStatus?.paidAmount || 0) > 0
+              const isCompleted = (itemStatus?.completedAmount || 0) > 0
+              const isLocked = isPaid || isCompleted
 
-              return editingItem === asItemId(item.id) ? (
+              // Prevent editing locked items
+              if (editingItem === asItemId(item.id) && isLocked) {
+                // If trying to edit a locked item, cancel editing
+                onCancelEditing()
+              }
+
+              return editingItem === asItemId(item.id) && !isLocked ? (
                 <EditingItemRow
                   key={item.id}
                   item={item}
                   sectionId={section.id}
                   itemVisible={itemVisible}
                   itemPrice={itemPrice}
+                  itemStatus={itemStatus}
                   editingData={editingData}
-                  onVisibilityChange={() => onItemVisibilityChange(asSectionId(section.id), item)}
+                  onVisibilityChange={isLocked ? undefined : () => onItemVisibilityChange(asSectionId(section.id), item)}
                   onEditingDataChange={onEditingDataChange}
                   onSave={() => onSaveEditing(asSectionId(section.id), item)}
                   onCancel={onCancelEditing}
@@ -138,9 +152,10 @@ export default function SectionCard({
                   itemVisible={itemVisible}
                   itemPrice={itemPrice}
                   itemTotal={itemTotal}
+                  itemStatus={itemStatus}
                   onVisibilityChange={() => onItemVisibilityChange(asSectionId(section.id), item)}
-                  onStartEditing={() => onStartEditing(item)}
-                  onDelete={() => onDeleteItem(asSectionId(section.id), asItemId(item.id))}
+                  onStartEditing={isLocked ? undefined : () => onStartEditing(item, itemStatus)}
+                  onDelete={isLocked ? undefined : () => onDeleteItem(asSectionId(section.id), asItemId(item.id), itemStatus)}
                 />
               )
             })}
@@ -153,7 +168,7 @@ export default function SectionCard({
               />
             ) : (
               <tr>
-                <td colSpan={7} className="px-3 py-2">
+                <td colSpan={9} className="px-3 py-2">
                   <button onClick={() => onNewItemSectionChange(asSectionId(section.id))} className="text-sm text-slate-500 hover:text-primary-400 flex items-center gap-1">
                     <IconPlus className="w-4 h-4" />
                     Добавить позицию
@@ -170,21 +185,33 @@ export default function SectionCard({
 
 // === Sub-components ===
 
-function EditingItemRow({ item, itemVisible, itemPrice, editingData, onVisibilityChange, onEditingDataChange, onSave, onCancel }: {
+function EditingItemRow({ item, itemVisible, itemPrice, itemStatus, editingData, onVisibilityChange, onEditingDataChange, onSave, onCancel }: {
   item: EstimateItem
   sectionId: string
   itemVisible: boolean
   itemPrice: number
+  itemStatus?: ItemStatus
   editingData: { name?: string; unit?: string; quantity?: number; price?: number }
-  onVisibilityChange: () => void
+  onVisibilityChange?: () => void
   onEditingDataChange: (data: { name?: string; unit?: string; quantity?: number; price?: number }) => void
   onSave: () => void
   onCancel: () => void
 }) {
+  const isPaid = (itemStatus?.paidAmount || 0) > 0
+  const isCompleted = (itemStatus?.completedAmount || 0) > 0
+  const isLocked = isPaid || isCompleted
+  
   return (
     <tr className="bg-slate-700/40 border-b border-slate-600/50">
       <td className="px-3 py-2">
-        <input type="checkbox" checked={itemVisible} onChange={onVisibilityChange} className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-primary-500" />
+        <input 
+          type="checkbox" 
+          checked={itemVisible} 
+          onChange={onVisibilityChange} 
+          disabled={isLocked}
+          className={`w-4 h-4 rounded border-slate-600 bg-slate-700 text-primary-500 ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
+          title={isLocked ? 'Нельзя изменять видимость оплаченных/выполненных работ' : ''}
+        />
       </td>
       <td className="px-3 py-2">
         <input type="text" value={editingData.name ?? item.name} onChange={(e) => onEditingDataChange({ ...editingData, name: e.target.value })} className="input-field py-1 px-2 text-sm w-full" autoFocus />
@@ -201,6 +228,20 @@ function EditingItemRow({ item, itemVisible, itemPrice, editingData, onVisibilit
       <td className="px-3 py-2 text-right text-primary-300 font-medium">
         {formatNumber((editingData.quantity ?? item.quantity) * (editingData.price ?? itemPrice))}
       </td>
+      <td className="px-3 py-2 text-center">
+        {isPaid ? (
+          <span className="text-green-400 text-lg" title="Оплачено">💰</span>
+        ) : (
+          <span className="text-slate-700">—</span>
+        )}
+      </td>
+      <td className="px-3 py-2 text-center">
+        {isCompleted ? (
+          <span className="text-blue-400 text-lg" title="Выполнено">✅</span>
+        ) : (
+          <span className="text-slate-700">—</span>
+        )}
+      </td>
       <td className="px-3 py-2">
         <div className="flex gap-1 justify-end">
           <button onClick={onSave} className="p-1.5 text-green-400 hover:bg-green-500/20 rounded" title="Сохранить">
@@ -215,30 +256,62 @@ function EditingItemRow({ item, itemVisible, itemPrice, editingData, onVisibilit
   )
 }
 
-function DisplayItemRow({ item, itemVisible, itemPrice, itemTotal, onVisibilityChange, onStartEditing, onDelete }: {
+function DisplayItemRow({ item, itemVisible, itemPrice, itemTotal, itemStatus, onVisibilityChange, onStartEditing, onDelete }: {
   item: EstimateItem
   sectionId: string
   itemVisible: boolean
   itemPrice: number
   itemTotal: number
-  onVisibilityChange: () => void
-  onStartEditing: () => void
-  onDelete: () => void
+  itemStatus?: ItemStatus
+  onVisibilityChange?: () => void
+  onStartEditing?: () => void
+  onDelete?: () => void
 }) {
+  const isPaid = (itemStatus?.paidAmount || 0) > 0
+  const isCompleted = (itemStatus?.completedAmount || 0) > 0
+  const isLocked = isPaid || isCompleted
+  
   return (
-    <tr className={`border-b border-slate-700/30 hover:bg-slate-700/20 cursor-pointer transition-colors ${!itemVisible ? 'opacity-40' : ''}`} onClick={onStartEditing}>
+    <tr className={`border-b border-slate-700/30 transition-colors ${!itemVisible ? 'opacity-40' : ''} ${isLocked ? 'bg-slate-800/30' : 'hover:bg-slate-700/20 cursor-pointer'}`} onClick={!isLocked ? onStartEditing : undefined}>
       <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-        <input type="checkbox" checked={itemVisible} onChange={onVisibilityChange} className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-primary-500 focus:ring-primary-500" />
+        <input 
+          type="checkbox" 
+          checked={itemVisible} 
+          onChange={onVisibilityChange} 
+          disabled={isLocked}
+          className={`w-4 h-4 rounded border-slate-600 bg-slate-700 text-primary-500 focus:ring-primary-500 ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}`}
+          title={isLocked ? 'Нельзя изменять видимость оплаченных/выполненных работ' : ''}
+        />
       </td>
       <td className="px-3 py-2 text-slate-200">{item.name}</td>
       <td className="px-3 py-2 text-slate-400">{item.unit}</td>
       <td className="px-3 py-2 text-right text-slate-300">{item.quantity}</td>
       <td className="px-3 py-2 text-right text-primary-400">{formatNumber(itemPrice)}</td>
       <td className="px-3 py-2 text-right font-medium text-primary-300">{formatNumber(itemTotal)}</td>
+      <td className="px-3 py-2 text-center">
+        {isPaid ? (
+          <span className="text-green-400 text-lg" title="Оплачено">💰</span>
+        ) : (
+          <span className="text-slate-700">—</span>
+        )}
+      </td>
+      <td className="px-3 py-2 text-center">
+        {isCompleted ? (
+          <span className="text-blue-400 text-lg" title="Выполнено">✅</span>
+        ) : (
+          <span className="text-slate-700">—</span>
+        )}
+      </td>
       <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-        <button onClick={onDelete} className="p-1.5 text-slate-500 hover:text-red-400 transition-colors" title="Удалить">
-          <IconTrash className="w-4 h-4" />
-        </button>
+        {isLocked ? (
+          <span className="text-slate-600 text-xs" title="Нельзя редактировать или удалять оплаченные/выполненные работы">
+            🔒
+          </span>
+        ) : (
+          <button onClick={onDelete} className="p-1.5 text-slate-500 hover:text-red-400 transition-colors" title="Удалить">
+            <IconTrash className="w-4 h-4" />
+          </button>
+        )}
       </td>
     </tr>
   )

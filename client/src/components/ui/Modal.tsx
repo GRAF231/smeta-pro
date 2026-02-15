@@ -45,8 +45,18 @@ interface ModalProps {
  */
 export default function Modal({ title, onClose, children, maxWidth = 'max-w-4xl', footer }: ModalProps) {
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className={`bg-slate-800 rounded-2xl border border-slate-700 w-full ${maxWidth} max-h-[90vh] overflow-hidden flex flex-col`}>
+    <div 
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose()
+        }
+      }}
+    >
+      <div 
+        className={`bg-slate-800 rounded-2xl border border-slate-700 w-full ${maxWidth} max-h-[90vh] overflow-hidden flex flex-col`}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700 flex-shrink-0">
           <h2 className="font-display text-xl font-bold text-white">{title}</h2>

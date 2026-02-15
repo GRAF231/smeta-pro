@@ -28,6 +28,7 @@ export class ViewService {
       linkToken: v.link_token,
       password: v.password || '',
       sortOrder: v.sort_order,
+      isCustomerView: Boolean(v.is_customer_view),
     }))
   }
 
@@ -45,7 +46,8 @@ export class ViewService {
       input.name || 'Новое представление',
       linkToken,
       null,
-      maxOrder + 1
+      maxOrder + 1,
+      false // isCustomerView - новые представления не являются сметой для заказчика по умолчанию
     )
 
     // Create section settings for all existing sections (visible by default)
@@ -79,6 +81,7 @@ export class ViewService {
       linkToken: view.link_token,
       password: view.password || '',
       sortOrder: view.sort_order,
+      isCustomerView: Boolean(view.is_customer_view),
     }
   }
 
@@ -109,6 +112,7 @@ export class ViewService {
       linkToken: view.link_token,
       password: newPassword || '',
       sortOrder: view.sort_order,
+      isCustomerView: Boolean(view.is_customer_view),
     }
   }
 
@@ -153,7 +157,8 @@ export class ViewService {
       newName,
       newLinkToken,
       null,
-      maxOrder + 1
+      maxOrder + 1,
+      false // isCustomerView - дубликат не наследует статус
     )
 
     // Copy section settings from source view
@@ -182,12 +187,37 @@ export class ViewService {
       )
     }
 
+    const newView = viewRepository.findById(newViewId)!
     return {
-      id: newViewId,
+      id: newView.id,
       name: newName,
       linkToken: newLinkToken,
       password: '',
       sortOrder: maxOrder + 1,
+      isCustomerView: Boolean(newView.is_customer_view),
+    }
+  }
+
+  /**
+   * Установить представление как смету для заказчика
+   */
+  setCustomerView(estimateId: string, viewId: string): EstimateView {
+    const view = viewRepository.findById(viewId)
+    if (!view || view.estimate_id !== estimateId) {
+      throw new NotFoundError('Представление')
+    }
+
+    viewRepository.setCustomerView(estimateId, viewId)
+    
+    // Reload view to get updated data
+    const updatedView = viewRepository.findById(viewId)!
+    return {
+      id: updatedView.id,
+      name: updatedView.name,
+      linkToken: updatedView.link_token,
+      password: updatedView.password || '',
+      sortOrder: updatedView.sort_order,
+      isCustomerView: true,
     }
   }
 

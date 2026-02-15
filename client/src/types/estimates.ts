@@ -20,6 +20,8 @@ export interface EstimateView {
   password: string
   /** Sort order for display */
   sortOrder: number
+  /** Whether this is the customer view (смета для заказчика) */
+  isCustomerView: boolean
 }
 
 /**
@@ -147,6 +149,8 @@ export interface EstimateData {
   sections: PublicSection[]
   /** Grand total */
   total: number
+  /** Balance (paid - completed) calculated using prices from current view */
+  balance: number
   /** Whether password is required to view */
   requiresPassword?: boolean
 }
@@ -183,9 +187,57 @@ export interface PublicViewItem {
   price: number
   /** Total (price * quantity) */
   total: number
+  /** Paid amount for this item */
+  paidAmount: number
+  /** Completed amount for this item */
+  completedAmount: number
 }
 
 // Legacy type aliases for backward compatibility
 export type Section = PublicSection
 export type ViewItem = PublicViewItem
+
+// ========== PAYMENT TYPES ==========
+
+/**
+ * Payment information
+ */
+export interface Payment {
+  /** Unique payment identifier */
+  id: string
+  /** Payment amount */
+  amount: number
+  /** Payment date (ISO string) */
+  paymentDate: string
+  /** Payment notes */
+  notes: string
+  /** Creation timestamp (ISO string) */
+  createdAt: string
+  /** Items included in this payment */
+  items: PaymentItem[]
+}
+
+/**
+ * Payment item (link between payment and estimate item)
+ */
+export interface PaymentItem {
+  /** Unique payment item identifier */
+  id: string
+  /** Estimate item ID */
+  itemId: string
+  /** Amount paid for this item */
+  amount: number
+}
+
+/**
+ * Item status (paid/completed amounts)
+ */
+export interface ItemStatus {
+  /** Estimate item ID */
+  itemId: string
+  /** Total paid amount for this item */
+  paidAmount: number
+  /** Total completed amount for this item */
+  completedAmount: number
+}
 

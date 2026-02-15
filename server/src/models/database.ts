@@ -471,21 +471,40 @@ export const itemQueries: Record<string, Statement> = {
 
 // ========== VIEW QUERIES ==========
 
-export const viewQueries: Record<string, Statement> = {
+// Lazy initialization of view queries to ensure migration runs first
+function createViewQueries(): Record<string, Statement> {
+  return {
   findByEstimateId: db.prepare('SELECT * FROM estimate_views WHERE estimate_id = ? ORDER BY sort_order'),
   findById: db.prepare('SELECT * FROM estimate_views WHERE id = ?'),
   findByLinkToken: db.prepare('SELECT * FROM estimate_views WHERE link_token = ?'),
   create: db.prepare(`
-    INSERT INTO estimate_views (id, estimate_id, name, link_token, password, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO estimate_views (id, estimate_id, name, link_token, password, sort_order, is_customer_view)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
   `),
   update: db.prepare(`
     UPDATE estimate_views SET name = ?, password = ? WHERE id = ?
   `),
+    updateCustomerView: db.prepare(`
+      UPDATE estimate_views SET is_customer_view = ? WHERE id = ?
+    `),
+    clearCustomerViewForEstimate: db.prepare(`
+      UPDATE estimate_views SET is_customer_view = 0 WHERE estimate_id = ?
+    `),
   delete: db.prepare('DELETE FROM estimate_views WHERE id = ?'),
   deleteByEstimateId: db.prepare('DELETE FROM estimate_views WHERE estimate_id = ?'),
   getMaxSortOrder: db.prepare('SELECT COALESCE(MAX(sort_order), 0) as max_order FROM estimate_views WHERE estimate_id = ?'),
 }
+}
+
+let _viewQueries: Record<string, Statement> | null = null
+export const viewQueries: Record<string, Statement> = new Proxy({} as Record<string, Statement>, {
+  get(target, prop: string) {
+    if (!_viewQueries) {
+      _viewQueries = createViewQueries()
+    }
+    return _viewQueries[prop]
+  }
+})
 
 export const viewSectionSettingsQueries: Record<string, Statement> = {
   findByViewId: db.prepare('SELECT * FROM view_section_settings WHERE view_id = ?'),
@@ -710,4 +729,46 @@ export const extractedRoomDataQueries: Record<string, Statement> = {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `),
   deleteByTask: db.prepare('DELETE FROM extracted_room_data WHERE task_id = ?'),
+}
+
+// ========== PAYMENT QUERIES ==========
+
+export const paymentQueries: Record<string, Statement> = {
+  findByEstimateId: db.prepare('SELECT * FROM payments WHERE estimate_id = ? ORDER BY payment_date DESC, created_at DESC'),
+  findById: db.prepare('SELECT * FROM payments WHERE id = ?'),
+  create: db.prepare(`
+    INSERT INTO payments (id, estimate_id, amount, payment_date, notes)
+    VALUES (?, ?, ?, ?, ?)
+  `),
+  delete: db.prepare('DELETE FROM payments WHERE id = ?'),
+  updateBalance: db.prepare(`
+    UPDATE estimates SET balance = balance + ? WHERE id = ?
+  `),
+}
+
+export const paymentItemQueries: Record<string, Statement> = {
+  findByPaymentId: db.prepare('SELECT * FROM payment_items WHERE payment_id = ?'),
+  findByItemId: db.prepare('SELECT * FROM payment_items WHERE item_id = ?'),
+  findByEstimateId: db.prepare(`
+    SELECT pi.* FROM payment_items pi
+    JOIN payments p ON p.id = pi.payment_id
+    WHERE p.estimate_id = ?
+  `),
+  create: db.prepare(`
+    INSERT INTO payment_items (id, payment_id, item_id, amount)
+    VALUES (?, ?, ?, ?)
+  `),
+  deleteByPaymentId: db.prepare('DELETE FROM payment_items WHERE payment_id = ?'),
+  getItemPaidAmount: db.prepare(`
+    SELECT COALESCE(SUM(pi.amount), 0) as total_paid
+    FROM payment_items pi
+    JOIN payments p ON p.id = pi.payment_id
+    WHERE pi.item_id = ? AND p.estimate_id = ?
+  `),
+  getItemCompletedAmount: db.prepare(`
+    SELECT COALESCE(SUM(sai.total), 0) as total_completed
+    FROM saved_act_items sai
+    JOIN saved_acts sa ON sa.id = sai.act_id
+    WHERE sai.item_id = ? AND sa.estimate_id = ?
+  `),
 }

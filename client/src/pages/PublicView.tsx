@@ -4,6 +4,7 @@ import { projectsApi } from '../services/api'
 import type { EstimateData } from '../types'
 import EstimateTable from '../components/EstimateTable'
 import Spinner from '../components/ui/Spinner'
+import { formatNumber } from '../utils/format'
 
 /**
  * Public view page component
@@ -206,6 +207,30 @@ export default function PublicView() {
       </div>
 
       <main className="max-w-7xl mx-auto px-1 sm:px-6 lg:px-8 py-3 sm:py-8">
+        {/* Balance Display */}
+        <div className="mb-6 bg-slate-800 border border-slate-700 rounded-xl p-4 sm:p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-slate-400 mb-1">Баланс</p>
+              <h3 className={`text-2xl font-bold ${data.balance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {formatNumber(data.balance)} ₽
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Оплачено: {formatNumber(
+                  data.sections.reduce((sum, section) => 
+                    sum + section.items.reduce((itemSum, item) => itemSum + item.paidAmount, 0), 0
+                  )
+                )} ₽ • 
+                Выполнено: {formatNumber(
+                  data.sections.reduce((sum, section) => 
+                    sum + section.items.reduce((itemSum, item) => itemSum + item.completedAmount, 0), 0
+                  )
+                )} ₽
+              </p>
+            </div>
+          </div>
+        </div>
+
         <EstimateTable data={data} viewName={data.viewName} />
       </main>
     </div>

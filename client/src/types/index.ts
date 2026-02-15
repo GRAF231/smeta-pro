@@ -60,6 +60,7 @@ export type {
   MaterialId,
   VersionId,
   ActId,
+  PaymentId,
   UserId,
 } from './common'
 
@@ -84,6 +85,7 @@ export {
   asMaterialId,
   asVersionId,
   asActId,
+  asPaymentId,
   asUserId,
 } from './common'
 
@@ -180,6 +182,9 @@ export type {
   PublicViewItem,
   Section,
   ViewItem,
+  Payment,
+  PaymentItem,
+  ItemStatus,
 } from './estimates'
 
 // ============================================================================
