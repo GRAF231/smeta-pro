@@ -30,8 +30,8 @@ interface GetItemTotalFn {
  */
 export function calculateActLines(
   sections: EstimateSection[],
-  selectionMode: 'sections' | 'items',
-  selectedSections: Set<string>,
+  _selectionMode: 'sections' | 'items',
+  _selectedSections: Set<string>,
   selectedItems: Set<string>,
   getItemPrice: GetItemPriceFn,
   getItemTotal: GetItemTotalFn

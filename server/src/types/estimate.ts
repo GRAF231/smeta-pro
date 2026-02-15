@@ -11,6 +11,9 @@ export interface EstimateRow {
   column_mapping: string
   master_password: string | null
   balance: number
+  customer_email: string | null
+  customer_phone: string | null
+  customer_name: string | null
   last_synced_at: string | null
   created_at: string
 }
@@ -245,6 +248,7 @@ export interface EstimateView {
   linkToken: string
   password: string
   sortOrder: number
+  isCustomerView: boolean
 }
 
 /**
@@ -577,6 +581,12 @@ export interface PaymentRow {
   amount: number
   payment_date: string
   notes: string
+  status: 'manual' | 'draft' | 'pending' | 'succeeded' | 'canceled'
+  payment_method: 'manual' | 'yookassa'
+  yookassa_invoice_id: string | null
+  yookassa_payment_id: string | null
+  payment_url: string | null
+  paid_at: string | null
   created_at: string
 }
 
@@ -601,6 +611,23 @@ export interface CreatePaymentInput {
     itemId: string
     amount: number
   }>
+  paymentMethod?: 'manual' | 'yookassa'
+}
+
+/**
+ * Данные для создания счета через ЮKassa
+ */
+export interface CreateYookassaInvoiceInput {
+  amount: number
+  paymentDate: string
+  notes?: string
+  items: Array<{
+    itemId: string
+    amount: number
+  }>
+  customerEmail?: string
+  customerPhone?: string
+  customerName?: string
 }
 
 /**
@@ -611,12 +638,100 @@ export interface PaymentInfo {
   amount: number
   paymentDate: string
   notes: string
+  status: 'manual' | 'draft' | 'pending' | 'succeeded' | 'canceled'
+  paymentMethod: 'manual' | 'yookassa'
+  yookassaInvoiceId?: string | null
+  yookassaPaymentId?: string | null
+  paymentUrl?: string | null
+  paidAt?: string | null
   createdAt: string
   items: Array<{
     id: string
     itemId: string
     amount: number
   }>
+}
+
+/**
+ * Запрос на создание счета в ЮKassa
+ */
+export interface YookassaInvoiceRequest {
+  amount: {
+    value: string
+    currency: string
+  }
+  description: string
+  capture: boolean
+  receipt?: {
+    customer: {
+      email?: string
+      phone?: string
+      full_name?: string
+    }
+    items: Array<{
+      description: string
+      quantity: string
+      amount: {
+        value: string
+        currency: string
+      }
+      vat_code?: number
+    }>
+  }
+  confirmation: {
+    type: 'redirect'
+    return_url: string
+  }
+  metadata?: {
+    payment_id: string
+    estimate_id: string
+  }
+}
+
+/**
+ * Ответ от ЮKassa при создании счета
+ */
+export interface YookassaInvoiceResponse {
+  id: string
+  status: string
+  amount: {
+    value: string
+    currency: string
+  }
+  description: string
+  created_at: string
+  paid_at?: string
+  confirmation: {
+    type: string
+    confirmation_url: string
+  }
+  metadata?: {
+    payment_id?: string
+    estimate_id?: string
+  }
+}
+
+/**
+ * Событие webhook от ЮKassa
+ */
+export interface YookassaWebhookEvent {
+  type: string
+  event: string
+  object: {
+    id: string
+    status: string
+    amount: {
+      value: string
+      currency: string
+    }
+    description?: string
+    created_at: string
+    paid_at?: string
+    metadata?: {
+      payment_id?: string
+      estimate_id?: string
+    }
+  }
 }
 
 /**

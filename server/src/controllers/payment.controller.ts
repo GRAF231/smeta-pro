@@ -72,6 +72,48 @@ export class PaymentController {
     const statuses = paymentService.getItemStatuses(estimateId)
     sendSuccess(res, statuses)
   })
+
+  /**
+   * Проверить и обновить статус платежа через ЮKassa API
+   */
+  checkPaymentStatus = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const estimateId = String(req.params.id)
+    const paymentId = String(req.params.paymentId)
+    const payment = await paymentService.checkPaymentStatus(estimateId, paymentId)
+    sendSuccess(res, payment)
+  })
+
+  /**
+   * Создать счет через ЮKassa
+   */
+  createInvoice = asyncHandler(async (req: AuthRequest, res: Response) => {
+    const estimateId = String(req.params.id)
+    const amount = Number(req.body.amount)
+    const paymentDate = requireString(req.body.paymentDate, 'Дата платежа')
+    const notes = req.body.notes || ''
+    const items = req.body.items || []
+    const customerEmail = req.body.customerEmail
+    const customerPhone = req.body.customerPhone
+    const customerName = req.body.customerName
+
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new Error('Необходимо выбрать хотя бы один пункт сметы')
+    }
+
+    const payment = await paymentService.createYookassaInvoice(estimateId, {
+      amount,
+      paymentDate,
+      notes,
+      items: items.map((item: any) => ({
+        itemId: String(item.itemId),
+        amount: Number(item.amount),
+      })),
+      customerEmail,
+      customerPhone,
+      customerName,
+    })
+    sendCreated(res, payment)
+  })
 }
 
 export const paymentController = new PaymentController()

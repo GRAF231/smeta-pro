@@ -211,6 +211,18 @@ export interface Payment {
   paymentDate: string
   /** Payment notes */
   notes: string
+  /** Payment status */
+  status: 'manual' | 'draft' | 'pending' | 'succeeded' | 'canceled'
+  /** Payment method */
+  paymentMethod: 'manual' | 'yookassa'
+  /** YooKassa invoice ID (if applicable) */
+  yookassaInvoiceId?: string | null
+  /** YooKassa payment ID (if applicable) */
+  yookassaPaymentId?: string | null
+  /** Payment URL for YooKassa invoices */
+  paymentUrl?: string | null
+  /** Payment completion date (ISO string, if applicable) */
+  paidAt?: string | null
   /** Creation timestamp (ISO string) */
   createdAt: string
   /** Items included in this payment */

@@ -428,6 +428,9 @@ export const estimateQueries: Record<string, Statement> = {
   update: db.prepare(`
     UPDATE estimates SET google_sheet_id = ?, title = ? WHERE id = ? AND brigadir_id = ?
   `),
+  updateCustomerData: db.prepare(`
+    UPDATE estimates SET customer_email = ?, customer_phone = ?, customer_name = ? WHERE id = ?
+  `),
   updateLastSynced: db.prepare(`
     UPDATE estimates SET last_synced_at = datetime('now') WHERE id = ?
   `),
@@ -736,9 +739,17 @@ export const extractedRoomDataQueries: Record<string, Statement> = {
 export const paymentQueries: Record<string, Statement> = {
   findByEstimateId: db.prepare('SELECT * FROM payments WHERE estimate_id = ? ORDER BY payment_date DESC, created_at DESC'),
   findById: db.prepare('SELECT * FROM payments WHERE id = ?'),
+  findByYookassaInvoiceId: db.prepare('SELECT * FROM payments WHERE yookassa_invoice_id = ?'),
+  findByYookassaPaymentId: db.prepare('SELECT * FROM payments WHERE yookassa_payment_id = ?'),
   create: db.prepare(`
-    INSERT INTO payments (id, estimate_id, amount, payment_date, notes)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO payments (id, estimate_id, amount, payment_date, notes, status, payment_method, yookassa_invoice_id, yookassa_payment_id, payment_url, paid_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `),
+  updateStatus: db.prepare(`
+    UPDATE payments SET status = ?, yookassa_payment_id = ?, paid_at = ? WHERE id = ?
+  `),
+  updatePaymentUrl: db.prepare(`
+    UPDATE payments SET payment_url = ? WHERE id = ?
   `),
   delete: db.prepare('DELETE FROM payments WHERE id = ?'),
   updateBalance: db.prepare(`
@@ -763,7 +774,7 @@ export const paymentItemQueries: Record<string, Statement> = {
     SELECT COALESCE(SUM(pi.amount), 0) as total_paid
     FROM payment_items pi
     JOIN payments p ON p.id = pi.payment_id
-    WHERE pi.item_id = ? AND p.estimate_id = ?
+    WHERE pi.item_id = ? AND p.estimate_id = ? AND (p.status = 'manual' OR p.status = 'succeeded')
   `),
   getItemCompletedAmount: db.prepare(`
     SELECT COALESCE(SUM(sai.total), 0) as total_completed

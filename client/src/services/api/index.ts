@@ -16,4 +16,5 @@ export { api } from './base'
 export { projectsApi } from './projects'
 export { materialsApi } from './materials'
 export { authApi } from './auth'
+export { yookassaApi } from './yookassa'
 

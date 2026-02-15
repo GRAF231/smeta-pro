@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 import type { Payment, ProjectWithEstimate, ProjectId } from '../types'
-import { formatNumber, formatDateShortRu, formatDateRu } from '../utils/format'
+import { formatNumber, formatDateRu } from '../utils/format'
 import { projectsApi } from '../services/api'
 import { IconTrash } from './ui/Icons'
 import Modal from './ui/Modal'
 import Spinner from './ui/Spinner'
+import { copyToClipboard } from '../utils/clipboard'
+import { useToast } from './ui/ToastContainer'
 
 interface PaymentHistoryModalProps {
   isOpen: boolean
@@ -25,18 +27,61 @@ export default function PaymentHistoryModal({
   const [isLoading, setIsLoading] = useState(false)
   const [expandedPaymentId, setExpandedPaymentId] = useState<string | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
+  const [checkingStatusId, setCheckingStatusId] = useState<string | null>(null)
+  const { showInfo, showError } = useToast()
 
   useEffect(() => {
     if (isOpen) {
       loadPayments()
       setExpandedPaymentId(null)
       setDeleteConfirmId(null)
+      setCheckingStatusId(null)
     } else {
       // Reset states when modal closes
       setExpandedPaymentId(null)
       setDeleteConfirmId(null)
+      setCheckingStatusId(null)
     }
   }, [isOpen, projectId])
+
+  // Автоматически проверяем статус платежей со статусом pending при открытии модального окна
+  useEffect(() => {
+    if (!isOpen || payments.length === 0) {
+      return
+    }
+
+    const pendingPayments = payments.filter(
+      p => p.paymentMethod === 'yookassa' && p.status === 'pending'
+    )
+    
+    // Проверяем статус каждого pending платежа (только один раз при открытии)
+    if (pendingPayments.length === 0) {
+      return
+    }
+
+    // Небольшая задержка перед проверкой, чтобы дать время загрузиться данным
+    const timeoutId = setTimeout(() => {
+      pendingPayments.forEach(payment => {
+        projectsApi.checkPaymentStatus(projectId, payment.id as any)
+          .then(response => {
+            // Обновляем платеж в списке только если статус изменился
+            if (response.data.status !== payment.status) {
+              setPayments(prev => prev.map(p => 
+                p.id === payment.id ? response.data : p
+              ))
+              if (response.data.status === 'succeeded' && onPaymentDeleted) {
+                onPaymentDeleted()
+              }
+            }
+          })
+          .catch(error => {
+            console.error('Error checking payment status:', error)
+          })
+      })
+    }, 1000) // Проверяем через 1 секунду после открытия
+
+    return () => clearTimeout(timeoutId)
+  }, [isOpen, projectId]) // Убрали payments.length из зависимостей, чтобы избежать бесконечного цикла
 
   const loadPayments = async () => {
     try {
@@ -135,6 +180,28 @@ export default function PaymentHistoryModal({
                             <span className="text-sm text-slate-400">
                               {formatDateRu(payment.paymentDate)}
                             </span>
+                            {/* Payment status badge */}
+                            {payment.paymentMethod === 'yookassa' && (
+                              <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                                payment.status === 'succeeded' 
+                                  ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                                  : payment.status === 'pending'
+                                  ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+                                  : payment.status === 'canceled'
+                                  ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                  : 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
+                              }`}>
+                                {payment.status === 'succeeded' && 'Оплачено'}
+                                {payment.status === 'pending' && 'Ожидает оплаты'}
+                                {payment.status === 'canceled' && 'Отменено'}
+                                {payment.status === 'draft' && 'Черновик'}
+                              </span>
+                            )}
+                            {payment.paymentMethod === 'manual' && (
+                              <span className="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30 font-medium">
+                                Ручной платеж
+                              </span>
+                            )}
                           </div>
                           {payment.notes && (
                             <p className="text-sm text-slate-400 truncate">{payment.notes}</p>
@@ -145,6 +212,87 @@ export default function PaymentHistoryModal({
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0 ml-4">
+                        {/* Quick copy link button for YooKassa invoices */}
+                        {payment.paymentMethod === 'yookassa' && payment.paymentUrl && (
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation()
+                              const success = await copyToClipboard(payment.paymentUrl!)
+                              if (success) {
+                                showInfo('Ссылка скопирована в буфер обмена', 2000)
+                              } else {
+                                showError('Не удалось скопировать ссылку', 2000)
+                              }
+                            }}
+                            className="p-2 text-slate-500 hover:text-primary-400 hover:bg-primary-500/10 rounded-lg transition-colors"
+                            title="Скопировать ссылку на оплату"
+                          >
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                              />
+                            </svg>
+                          </button>
+                        )}
+                        {/* Check status button for pending YooKassa payments */}
+                        {payment.paymentMethod === 'yookassa' && payment.status === 'pending' && (
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation()
+                              setCheckingStatusId(payment.id)
+                              try {
+                                const response = await projectsApi.checkPaymentStatus(projectId, payment.id as any)
+                                setPayments(prev => prev.map(p => 
+                                  p.id === payment.id ? response.data : p
+                                ))
+                                if (response.data.status === 'succeeded') {
+                                  showInfo('Платеж успешно оплачен!', 3000)
+                                  if (onPaymentDeleted) {
+                                    onPaymentDeleted()
+                                  }
+                                } else if (response.data.status === 'canceled') {
+                                  showInfo('Платеж отменен', 3000)
+                                } else {
+                                  showInfo('Статус платежа обновлен', 2000)
+                                }
+                              } catch (error) {
+                                console.error('Error checking payment status:', error)
+                                showError('Не удалось проверить статус платежа', 3000)
+                              } finally {
+                                setCheckingStatusId(null)
+                              }
+                            }}
+                            className="p-2 text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
+                            title="Проверить статус платежа"
+                            disabled={checkingStatusId === payment.id}
+                          >
+                            {checkingStatusId === payment.id ? (
+                              <Spinner size="sm" className="border-slate-400" />
+                            ) : (
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                                />
+                              </svg>
+                            )}
+                          </button>
+                        )}
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
@@ -193,6 +341,69 @@ export default function PaymentHistoryModal({
                             <div className="mt-4 pt-4 border-t border-slate-700">
                               <div className="text-xs text-slate-400 mb-1">Примечание:</div>
                               <div className="text-sm text-slate-300">{payment.notes}</div>
+                            </div>
+                          )}
+                          {/* Payment URL for YooKassa invoices */}
+                          {payment.paymentMethod === 'yookassa' && payment.paymentUrl && (
+                            <div className="mt-4 pt-4 border-t border-slate-700">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="text-xs text-slate-400">
+                                  {payment.status === 'pending' ? 'Ссылка для оплаты:' : 'Ссылка на оплату:'}
+                                </div>
+                                {payment.status === 'pending' && (
+                                  <a
+                                    href={payment.paymentUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-xs text-primary-400 hover:text-primary-300 underline"
+                                  >
+                                    Открыть для оплаты →
+                                  </a>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 bg-slate-800/50 rounded-lg p-2 border border-slate-700/50">
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-xs text-slate-500 mb-1">Ссылка:</div>
+                                  <div className="text-sm text-slate-300 font-mono truncate">
+                                    {payment.paymentUrl}
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={async (e) => {
+                                    e.stopPropagation()
+                                    const success = await copyToClipboard(payment.paymentUrl!)
+                                    if (success) {
+                                      showInfo('Ссылка скопирована в буфер обмена', 3000)
+                                    } else {
+                                      showError('Не удалось скопировать ссылку', 3000)
+                                    }
+                                  }}
+                                  className="flex-shrink-0 px-3 py-1.5 bg-primary-500/20 hover:bg-primary-500/30 text-primary-400 rounded-lg transition-colors text-xs font-medium border border-primary-500/30"
+                                  title="Скопировать ссылку"
+                                >
+                                  <svg
+                                    className="w-4 h-4 inline-block mr-1"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                                    />
+                                  </svg>
+                                  Копировать
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                          {/* Paid date for succeeded payments */}
+                          {payment.paidAt && (
+                            <div className="mt-4 pt-4 border-t border-slate-700">
+                              <div className="text-xs text-slate-400 mb-1">Дата оплаты:</div>
+                              <div className="text-sm text-slate-300">{formatDateRu(payment.paidAt)}</div>
                             </div>
                           )}
                         </div>

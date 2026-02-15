@@ -2,8 +2,11 @@ import { useState, useEffect } from 'react'
 import PaymentModal from './PaymentModal'
 import PaymentHistoryModal from './PaymentHistoryModal'
 import type { ProjectWithEstimate, ProjectId, ItemStatus } from '../types'
+import { asItemId } from '../types'
 import { formatNumber } from '../utils/format'
 import { projectsApi } from '../services/api'
+import { useToast } from './ui/ToastContainer'
+import { copyToClipboard } from '../utils/clipboard'
 
 interface BalanceDisplayProps {
   project: ProjectWithEstimate
@@ -18,8 +21,8 @@ export default function BalanceDisplay({
 }: BalanceDisplayProps) {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false)
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const [itemStatuses, setItemStatuses] = useState<Record<string, ItemStatus>>({})
+  const { showInfo, showError } = useToast()
 
   useEffect(() => {
     if (isPaymentModalOpen) {
@@ -41,16 +44,66 @@ export default function BalanceDisplay({
     paymentDate: string
     notes: string
     items: Array<{ itemId: string; amount: number }>
+    paymentMethod?: 'manual' | 'yookassa'
   }) => {
-    setIsSubmitting(true)
     try {
-      await projectsApi.createPayment(projectId, data)
+      await projectsApi.createPayment(projectId, {
+        ...data,
+        items: data.items.map(item => ({
+          itemId: asItemId(item.itemId),
+          amount: item.amount,
+        })),
+      })
       setIsPaymentModalOpen(false)
       if (onBalanceUpdate) {
         onBalanceUpdate()
       }
-    } finally {
-      setIsSubmitting(false)
+    } catch (error) {
+      console.error('Error creating payment:', error)
+    }
+  }
+
+  const handleCreateInvoice = async (data: {
+    amount: number
+    paymentDate: string
+    notes: string
+    items: Array<{ itemId: string; amount: number }>
+    customerEmail?: string
+    customerPhone?: string
+    customerName?: string
+  }) => {
+    try {
+      const response = await projectsApi.createInvoice(projectId, {
+        ...data,
+        items: data.items.map(item => ({
+          itemId: asItemId(item.itemId),
+          amount: item.amount,
+        })),
+      })
+      setIsPaymentModalOpen(false)
+      
+      // Показать уведомление и открыть историю платежей
+      if (response.data.paymentUrl) {
+        // Автоматически копируем ссылку в буфер обмена
+        const copySuccess = await copyToClipboard(response.data.paymentUrl)
+        
+        showInfo(
+          `Счет успешно создан! ${copySuccess ? 'Ссылка для оплаты скопирована в буфер обмена и сохранена в истории платежей.' : 'Ссылка для оплаты сохранена в истории платежей.'}`,
+          5000
+        )
+      } else {
+        showInfo('Счет успешно создан!', 4000)
+      }
+      
+      // Открыть историю платежей
+      setIsHistoryModalOpen(true)
+      
+      if (onBalanceUpdate) {
+        onBalanceUpdate()
+      }
+    } catch (error) {
+      console.error('Error creating invoice:', error)
+      showError('Ошибка при создании счета. Попробуйте еще раз.', 5000)
     }
   }
 
@@ -95,6 +148,7 @@ export default function BalanceDisplay({
         itemStatuses={itemStatuses}
         onClose={() => setIsPaymentModalOpen(false)}
         onSubmit={handleSubmitPayment}
+        onCreateInvoice={handleCreateInvoice}
       />
 
       <PaymentHistoryModal

@@ -443,6 +443,41 @@ function createTables(db: DatabaseType): void {
     db.exec(`ALTER TABLE estimates ADD COLUMN balance REAL DEFAULT 0`)
   }
 
+  // Migration: add customer fields to estimates if not exists
+  if (!estimateColumns.some(col => col.name === 'customer_email')) {
+    db.exec(`ALTER TABLE estimates ADD COLUMN customer_email TEXT DEFAULT NULL`)
+  }
+  if (!estimateColumns.some(col => col.name === 'customer_phone')) {
+    db.exec(`ALTER TABLE estimates ADD COLUMN customer_phone TEXT DEFAULT NULL`)
+  }
+  if (!estimateColumns.some(col => col.name === 'customer_name')) {
+    db.exec(`ALTER TABLE estimates ADD COLUMN customer_name TEXT DEFAULT NULL`)
+  }
+
+  // Migration: add YooKassa fields to payments if not exists
+  const paymentColumns = db.prepare("PRAGMA table_info(payments)").all() as { name: string }[]
+  if (!paymentColumns.some(col => col.name === 'status')) {
+    db.exec(`ALTER TABLE payments ADD COLUMN status TEXT DEFAULT 'manual' CHECK(status IN ('manual', 'draft', 'pending', 'succeeded', 'canceled'))`)
+    // Update existing payments to 'manual' status
+    db.exec(`UPDATE payments SET status = 'manual' WHERE status IS NULL`)
+  }
+  if (!paymentColumns.some(col => col.name === 'payment_method')) {
+    db.exec(`ALTER TABLE payments ADD COLUMN payment_method TEXT DEFAULT 'manual' CHECK(payment_method IN ('manual', 'yookassa'))`)
+    db.exec(`UPDATE payments SET payment_method = 'manual' WHERE payment_method IS NULL`)
+  }
+  if (!paymentColumns.some(col => col.name === 'yookassa_invoice_id')) {
+    db.exec(`ALTER TABLE payments ADD COLUMN yookassa_invoice_id TEXT DEFAULT NULL`)
+  }
+  if (!paymentColumns.some(col => col.name === 'yookassa_payment_id')) {
+    db.exec(`ALTER TABLE payments ADD COLUMN yookassa_payment_id TEXT DEFAULT NULL`)
+  }
+  if (!paymentColumns.some(col => col.name === 'payment_url')) {
+    db.exec(`ALTER TABLE payments ADD COLUMN payment_url TEXT DEFAULT NULL`)
+  }
+  if (!paymentColumns.some(col => col.name === 'paid_at')) {
+    db.exec(`ALTER TABLE payments ADD COLUMN paid_at TEXT DEFAULT NULL`)
+  }
+
   // Create indexes
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_estimates_brigadir ON estimates(brigadir_id);

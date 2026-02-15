@@ -49,8 +49,8 @@ interface UseActPdfProps {
 export function useActPdf({
   projectId,
   selectedViewId,
-  selectionMode,
-  selectedSections,
+  selectionMode: _selectionMode,
+  selectedSections: _selectedSections,
   selectedItems,
   sections,
   actLines,

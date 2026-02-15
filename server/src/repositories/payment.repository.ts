@@ -33,9 +33,60 @@ export class PaymentRepository {
     estimateId: string,
     amount: number,
     paymentDate: string,
-    notes: string = ''
+    notes: string = '',
+    status: 'manual' | 'draft' | 'pending' | 'succeeded' | 'canceled' = 'manual',
+    paymentMethod: 'manual' | 'yookassa' = 'manual',
+    yookassaInvoiceId: string | null = null,
+    yookassaPaymentId: string | null = null,
+    paymentUrl: string | null = null,
+    paidAt: string | null = null
   ): void {
-    paymentQueries.create.run(id, estimateId, amount, paymentDate, notes)
+    paymentQueries.create.run(
+      id,
+      estimateId,
+      amount,
+      paymentDate,
+      notes,
+      status,
+      paymentMethod,
+      yookassaInvoiceId,
+      yookassaPaymentId,
+      paymentUrl,
+      paidAt
+    )
+  }
+
+  /**
+   * Найти платеж по ID счета ЮKassa
+   */
+  findByYookassaInvoiceId(yookassaInvoiceId: string): PaymentRow | undefined {
+    return paymentQueries.findByYookassaInvoiceId.get(yookassaInvoiceId) as PaymentRow | undefined
+  }
+
+  /**
+   * Найти платеж по ID платежа ЮKassa
+   */
+  findByYookassaPaymentId(yookassaPaymentId: string): PaymentRow | undefined {
+    return paymentQueries.findByYookassaPaymentId.get(yookassaPaymentId) as PaymentRow | undefined
+  }
+
+  /**
+   * Обновить статус платежа
+   */
+  updateStatus(
+    id: string,
+    status: 'manual' | 'draft' | 'pending' | 'succeeded' | 'canceled',
+    yookassaPaymentId: string | null = null,
+    paidAt: string | null = null
+  ): void {
+    paymentQueries.updateStatus.run(status, yookassaPaymentId, paidAt, id)
+  }
+
+  /**
+   * Обновить URL оплаты
+   */
+  updatePaymentUrl(id: string, paymentUrl: string): void {
+    paymentQueries.updatePaymentUrl.run(paymentUrl, id)
   }
 
   /**

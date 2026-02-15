@@ -56,6 +56,18 @@ export class EstimateRepository {
   }
 
   /**
+   * Обновить данные заказчика
+   */
+  updateCustomerData(
+    id: string,
+    customerEmail: string | null,
+    customerPhone: string | null,
+    customerName: string | null
+  ): void {
+    estimateQueries.updateCustomerData.run(customerEmail, customerPhone, customerName, id)
+  }
+
+  /**
    * Обновить время последней синхронизации
    */
   updateLastSynced(id: string): void {

@@ -59,6 +59,15 @@ export class ConflictError extends AppError {
 }
 
 /**
+ * Ошибка конфигурации (500)
+ */
+export class ConfigurationError extends AppError {
+  constructor(message: string) {
+    super(message, 500, 'CONFIGURATION_ERROR')
+  }
+}
+
+/**
  * Проверка, является ли ошибка экземпляром AppError
  */
 export function isAppError(error: unknown): error is AppError {

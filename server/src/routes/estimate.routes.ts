@@ -6,6 +6,7 @@ import { versionController } from '../controllers/version.controller'
 import { actController } from '../controllers/act.controller'
 import { paymentController } from '../controllers/payment.controller'
 import { publicController } from '../controllers/public.controller'
+import { yookassaController } from '../controllers/yookassa.controller'
 import { authMiddleware } from '../middleware/auth'
 
 const router = Router()
@@ -86,7 +87,9 @@ router.delete('/:id/act-images/:imageType', actController.deleteActImage)
 // Payments
 router.get('/:id/payments', paymentController.getPayments)
 router.post('/:id/payments', paymentController.createPayment)
+router.post('/:id/payments/invoice', paymentController.createInvoice)
 router.get('/:id/payments/:paymentId', paymentController.getPayment)
+router.post('/:id/payments/:paymentId/check-status', paymentController.checkPaymentStatus)
 router.delete('/:id/payments/:paymentId', paymentController.deletePayment)
 router.get('/:id/item-statuses', paymentController.getItemStatuses)
 

@@ -19,6 +19,12 @@ export interface Project {
   googleSheetId: string
   /** Project balance */
   balance: number
+  /** Customer email (if available) */
+  customerEmail?: string | null
+  /** Customer phone (if available) */
+  customerPhone?: string | null
+  /** Customer name (if available) */
+  customerName?: string | null
   /** Last synchronization timestamp with Google Sheets (ISO string) */
   lastSyncedAt?: string
   /** Project creation timestamp (ISO string) */

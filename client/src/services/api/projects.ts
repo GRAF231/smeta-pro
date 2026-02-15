@@ -15,7 +15,6 @@ import type {
   SavedActDetail,
   UsedItemsMap,
   Payment,
-  PaymentItem,
   ItemStatus,
   ProjectId,
   ViewId,
@@ -154,7 +153,19 @@ export const projectsApi = {
     paymentDate: string
     notes?: string
     items: Array<{ itemId: ItemId; amount: number }>
+    paymentMethod?: 'manual' | 'yookassa'
   }) => api.post<Payment>(`/projects/${projectId}/payments`, data),
+  createInvoice: (projectId: ProjectId, data: {
+    amount: number
+    paymentDate: string
+    notes?: string
+    items: Array<{ itemId: ItemId; amount: number }>
+    customerEmail?: string
+    customerPhone?: string
+    customerName?: string
+  }) => api.post<Payment>(`/projects/${projectId}/payments/invoice`, data),
+  checkPaymentStatus: (projectId: ProjectId, paymentId: PaymentId) =>
+    api.post<Payment>(`/projects/${projectId}/payments/${paymentId}/check-status`),
   deletePayment: (projectId: ProjectId, paymentId: PaymentId) =>
     api.delete(`/projects/${projectId}/payments/${paymentId}`),
   getItemStatuses: (projectId: ProjectId) =>
